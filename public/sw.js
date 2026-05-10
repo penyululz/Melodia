@@ -1,5 +1,5 @@
-const APP_CACHE_NAME = "melodia-app-v8"
-const IS_LOCAL_DEV = ["localhost", "127.0.0.1", "::1"].includes(self.location.hostname)
+const APP_CACHE_NAME = "melodia-app-v9"
+const NETWORK_TIMEOUT_MS = 3500
 
 const APP_SHELL_URLS = [
   "/",
@@ -14,6 +14,8 @@ const APP_SHELL_URLS = [
   "/upload",
   "/youtube",
   "/offline",
+  "/login",
+  "/register",
   "/manifest.json",
   "/icon.svg",
   "/apple-icon.png",
@@ -24,9 +26,11 @@ const APP_SHELL_URLS = [
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(APP_CACHE_NAME).then((cache) =>
-      cache.addAll(APP_SHELL_URLS).catch((error) => {
-        console.log("[Melodia SW] App shell cache skipped:", error)
-      })
+      Promise.allSettled(
+        APP_SHELL_URLS.map((url) =>
+          cache.add(new Request(url, { cache: "reload" }))
+        )
+      )
     )
   )
   self.skipWaiting()
@@ -56,9 +60,13 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url)
   if (isDevelopmentRuntimeRequest(url)) return
-  if (IS_LOCAL_DEV && (request.mode === "navigate" || isNextStaticRequest(url) || isStaticAssetRequest(url))) return
 
   if (isMediaRequest(url)) {
+    return
+  }
+
+  if (isReadableApiRequest(url)) {
+    event.respondWith(networkFirst(request, APP_CACHE_NAME))
     return
   }
 
@@ -109,6 +117,30 @@ function isMediaRequest(url) {
   )
 }
 
+function isReadableApiRequest(url) {
+  if (!url.pathname.startsWith("/api/")) return false
+
+  return (
+    url.pathname === "/api/auth/session" ||
+    url.pathname === "/api/tracks" ||
+    url.pathname === "/api/youtube/tracks" ||
+    url.pathname === "/api/youtube/playlists" ||
+    url.pathname === "/api/home" ||
+    url.pathname === "/api/albums" ||
+    url.pathname === "/api/artists" ||
+    url.pathname === "/api/genres" ||
+    url.pathname === "/api/playlists" ||
+    url.pathname === "/api/stats" ||
+    url.pathname === "/api/mixes" ||
+    url.pathname === "/api/recommendations" ||
+    url.pathname === "/api/search" ||
+    url.pathname === "/api/youtube/search" ||
+    url.pathname === "/api/lyrics" ||
+    url.pathname.startsWith("/api/playlists/") ||
+    url.pathname.startsWith("/api/youtube/playlists/")
+  )
+}
+
 async function cacheFirst(request, cacheName) {
   const cache = await caches.open(cacheName)
   const cached = await cache.match(request)
@@ -125,7 +157,7 @@ async function networkFirst(request, cacheName, fallbackUrl) {
   const cache = await caches.open(cacheName)
 
   try {
-    const response = await fetch(request)
+    const response = await fetchWithTimeout(request, NETWORK_TIMEOUT_MS)
     if (response.ok) {
       cache.put(request, response.clone())
     }
@@ -143,5 +175,16 @@ async function networkFirst(request, cacheName, fallbackUrl) {
       status: 503,
       headers: { "Content-Type": "text/plain" },
     })
+  }
+}
+
+async function fetchWithTimeout(request, timeoutMs) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    return await fetch(request, { signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
   }
 }

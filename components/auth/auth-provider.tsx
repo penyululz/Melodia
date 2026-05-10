@@ -15,9 +15,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async function loadSession() {
       try {
         const res = await fetch("/api/auth/session")
+        if (!res.ok) throw new Error("Session request failed")
         const data = await res.json()
         setUser(data.user)
       } catch {
+        const cachedUser = useAuthStore.getState().user
+        if (typeof navigator !== "undefined" && !navigator.onLine && cachedUser) {
+          setUser(cachedUser)
+          return
+        }
         setUser(null)
       }
     }

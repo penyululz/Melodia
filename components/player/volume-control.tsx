@@ -8,19 +8,25 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { getBaseVolumeForNormalizedVolume, getNormalizedVolume } from "@/lib/audio-normalization"
 import { Volume, Volume1, Volume2, VolumeX } from "lucide-react"
 
 export function VolumeControl() {
-  const { volume, isMuted, setVolume, toggleMute } = usePlayerStore()
+  const { currentTrack, volume, isMuted, setVolume, toggleMute } = usePlayerStore()
+  const effectiveVolume = getNormalizedVolume(volume, isMuted, currentTrack)
+  const effectivePercent = Math.round(effectiveVolume * 100)
 
   const getVolumeIcon = () => {
-    if (isMuted || volume === 0) return VolumeX
-    if (volume < 0.3) return Volume
-    if (volume < 0.7) return Volume1
+    if (isMuted || effectiveVolume === 0) return VolumeX
+    if (effectiveVolume < 0.3) return Volume
+    if (effectiveVolume < 0.7) return Volume1
     return Volume2
   }
 
   const VolumeIcon = getVolumeIcon()
+  const handleVolumeChange = (value: number[]) => {
+    setVolume(getBaseVolumeForNormalizedVolume(value[0] / 100, currentTrack))
+  }
 
   return (
     <Popover>
@@ -29,7 +35,7 @@ export function VolumeControl() {
           variant="ghost"
           size="icon"
           className="flex h-8 w-8 sm:h-9 sm:w-9"
-          title="Volume"
+          title={`Volume ${effectivePercent}%`}
         >
           <VolumeIcon className="h-4 w-4 sm:h-5 sm:w-5" />
         </Button>
@@ -37,11 +43,11 @@ export function VolumeControl() {
       <PopoverContent className="w-auto p-3" side="top" align="center">
         <div className="flex flex-col items-center gap-2">
           <Slider
-            value={[isMuted ? 0 : volume * 100]}
+            value={[effectivePercent]}
             max={100}
             step={1}
             orientation="vertical"
-            onValueChange={(value) => setVolume(value[0] / 100)}
+            onValueChange={handleVolumeChange}
             className="h-24 w-2"
           />
           <Button

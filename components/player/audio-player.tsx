@@ -89,7 +89,9 @@ export function AudioPlayer() {
           >
             <ChevronUp className="h-4 w-4" />
           </Button>
-          <VolumeControl />
+          <div className="hidden sm:block">
+            <VolumeControl />
+          </div>
           <QueueButton />
         </div>
       </div>

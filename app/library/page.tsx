@@ -71,27 +71,27 @@ export default function LibraryPage() {
       )}
 
       <Tabs defaultValue="all" className="space-y-4">
-        <TabsList className="flex-wrap">
-          <TabsTrigger value="all" className="gap-2">
+        <TabsList className="h-auto max-w-full flex-wrap justify-start gap-1 p-1">
+          <TabsTrigger value="all" className="h-8 flex-none gap-2 sm:h-9">
             All Songs
             <span className="text-xs text-muted-foreground">({totalTracks})</span>
           </TabsTrigger>
-          <TabsTrigger value="local" className="gap-2">
+          <TabsTrigger value="local" className="h-8 flex-none gap-2 sm:h-9">
             <Music className="h-4 w-4" />
             Local Files
             <span className="text-xs text-muted-foreground">({localTracks.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="online" className="gap-2">
+          <TabsTrigger value="online" className="h-8 flex-none gap-2 sm:h-9">
             <Radio className="h-4 w-4" />
             Saved Online
             <span className="text-xs text-muted-foreground">({savedOnlineTracks.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="downloaded" className="gap-2">
+          <TabsTrigger value="downloaded" className="h-8 flex-none gap-2 sm:h-9">
             <Download className="h-4 w-4" />
             Downloads
             <span className="text-xs text-muted-foreground">({downloadedTracks.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="podcasts" className="gap-2">
+          <TabsTrigger value="podcasts" className="h-8 flex-none gap-2 sm:h-9">
             <Podcast className="h-4 w-4" />
             Podcasts
             <span className="text-xs text-muted-foreground">({podcastTracks.length})</span>

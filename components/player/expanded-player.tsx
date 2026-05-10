@@ -15,6 +15,7 @@ import { SyncedLyrics } from "./synced-lyrics"
 import { SaveOfflineButton } from "@/components/offline/save-offline-button"
 import { getYouTubeVideoIdFromTrack } from "@/lib/offline-media"
 import { hasVideoExtension } from "@/lib/format"
+import { getBaseVolumeForNormalizedVolume, getNormalizedVolume } from "@/lib/audio-normalization"
 import {
   ChevronDown,
   Play,
@@ -224,8 +225,8 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
-    video.volume = isMuted ? 0 : volume
-  }, [volume, isMuted])
+    video.volume = getNormalizedVolume(volume, isMuted, currentTrack)
+  }, [volume, isMuted, currentTrack, currentTrack?.loudness_adjust_db, currentTrack?.replaygain_track_gain, currentTrack?.replaygain_album_gain])
 
   useEffect(() => {
     const video = videoRef.current
@@ -304,7 +305,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
       playsInline
       onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
       onLoadedMetadata={(event) => {
-        event.currentTarget.volume = isMuted ? 0 : volume
+        event.currentTarget.volume = getNormalizedVolume(volume, isMuted, currentTrack)
         const mediaDuration = event.currentTarget.duration
         setDuration(Number.isFinite(mediaDuration) && mediaDuration > 0 ? mediaDuration : duration)
       }}
@@ -332,27 +333,33 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
   const sidebarOffset = isCollapsed ? "lg:pl-16" : "lg:pl-64"
 
   // Compute volume icon
-  const VolumeIcon = isMuted || volume === 0 ? VolumeX : volume < 0.3 ? Volume : volume < 0.7 ? Volume1 : Volume2
+  const effectiveVolume = getNormalizedVolume(volume, isMuted, currentTrack)
+  const effectiveVolumePercent = Math.round(effectiveVolume * 100)
+  const VolumeIcon =
+    isMuted || effectiveVolume === 0 ? VolumeX : effectiveVolume < 0.3 ? Volume : effectiveVolume < 0.7 ? Volume1 : Volume2
+  const handleVolumeChange = (value: number[]) => {
+    setVolume(getBaseVolumeForNormalizedVolume(value[0] / 100, currentTrack))
+  }
 
   const renderVolumeControl = (buttonClassName: string) => (
-    <div className="relative flex flex-shrink-0 items-center">
+    <div className="relative hidden flex-shrink-0 items-center sm:flex">
       <Button
         variant="ghost"
         size="icon"
         onClick={() => setShowVolume(!showVolume)}
         className={cn(buttonClassName, showVolume ? "text-primary" : "text-muted-foreground")}
-        title="Volume"
+        title={`Volume ${effectiveVolumePercent}%`}
       >
         <VolumeIcon className="h-5 w-5" />
       </Button>
       {showVolume && (
         <div className="absolute bottom-full left-1/2 z-20 mb-2 flex -translate-x-1/2 flex-col items-center gap-2 rounded-lg border bg-popover px-3 py-3 shadow-xl">
           <Slider
-            value={[isMuted ? 0 : volume * 100]}
+            value={[effectiveVolumePercent]}
             max={100}
             step={1}
             orientation="vertical"
-            onValueChange={(value) => setVolume(value[0] / 100)}
+            onValueChange={handleVolumeChange}
             className="h-24 w-2"
           />
           <Button variant="ghost" size="icon" onClick={toggleMute} className="h-8 w-8">
@@ -454,20 +461,21 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
             </Button>
 
             {/* Volume — click to toggle slider */}
-            <div className="relative flex flex-shrink-0 items-center">
+            <div className="relative hidden flex-shrink-0 items-center sm:flex">
               <Button variant="ghost" size="icon"
                 onClick={() => setShowVolume(!showVolume)}
-                className={cn("h-9 w-9 hover:text-white", showVolume ? "text-primary" : "text-white/70")}>
+                className={cn("h-9 w-9 hover:text-white", showVolume ? "text-primary" : "text-white/70")}
+                title={`Volume ${effectiveVolumePercent}%`}>
                 <VolumeIcon className="h-4 w-4" />
               </Button>
               {showVolume && (
                 <div className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2 rounded-lg bg-black/90 px-3 py-3 shadow-xl">
                   <Slider
-                    value={[isMuted ? 0 : volume * 100]}
+                    value={[effectiveVolumePercent]}
                     max={100}
                     step={1}
                     orientation="vertical"
-                    onValueChange={(v) => setVolume(v[0] / 100)}
+                    onValueChange={handleVolumeChange}
                     className="h-24"
                   />
                 </div>

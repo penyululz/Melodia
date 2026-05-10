@@ -152,6 +152,7 @@ export function VideoPlayer() {
   const recordedPlayKeyRef = useRef<string | null>(null)
   const offlineVideoUrlRef = useRef<string | null>(null)
   const offlineFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const videoClockFrameRef = useRef<number | null>(null)
   const dragStateRef = useRef<DragState | null>(null)
   const { currentTrack, isPlaying, currentTime, volume, isMuted, isExpandedPlayerOpen, setCurrentTime, setDuration, setIsPlaying } = usePlayerStore()
   const { playbackMode, streamingQuality, pauseWatchHistory } = useSettingsStore()
@@ -180,6 +181,10 @@ export function VideoPlayer() {
     ? getBestTrackMediaUrl(currentTrack, "video", streamingQuality)
     : ""
   const videoSrc = offlineVideoUrl || streamingVideoSrc
+  const knownDuration =
+    typeof currentTrack?.duration === "number" && Number.isFinite(currentTrack.duration) && currentTrack.duration > 0
+      ? currentTrack.duration
+      : 0
 
   const clearOfflineFallbackTimer = useCallback(() => {
     if (offlineFallbackTimerRef.current) {
@@ -238,8 +243,9 @@ export function VideoPlayer() {
   useEffect(() => {
     if (playbackMode === "video" && (isYouTube || isLocalVideo) && (currentTrack?.videoId || currentTrack?.file_path)) {
       setIsVisible(true)
+      if (knownDuration > 0) setDuration(knownDuration)
     }
-  }, [playbackMode, isYouTube, isLocalVideo, currentTrack?.id, currentTrack?.videoId, currentTrack?.file_path])
+  }, [playbackMode, isYouTube, isLocalVideo, currentTrack?.id, currentTrack?.videoId, currentTrack?.file_path, knownDuration, setDuration])
 
   useEffect(() => {
     let isCancelled = false
@@ -351,6 +357,42 @@ export function VideoPlayer() {
       video.pause()
     }
   }, [isPlaying, shouldUseVideoEngine, tryOfflineVideoFallback])
+
+  useEffect(() => {
+    if (!shouldUseVideoEngine || !isPlaying) {
+      if (videoClockFrameRef.current) {
+        cancelAnimationFrame(videoClockFrameRef.current)
+        videoClockFrameRef.current = null
+      }
+      return
+    }
+
+    const updateVideoClock = () => {
+      const video = videoRef.current
+      if (!video || !shouldUseVideoEngine) return
+
+      if (!video.paused) {
+        setCurrentTime(video.currentTime)
+        const mediaDuration = video.duration
+        if (Number.isFinite(mediaDuration) && mediaDuration > 0) {
+          setDuration(mediaDuration)
+        } else if (knownDuration > 0) {
+          setDuration(knownDuration)
+        }
+      }
+
+      videoClockFrameRef.current = requestAnimationFrame(updateVideoClock)
+    }
+
+    videoClockFrameRef.current = requestAnimationFrame(updateVideoClock)
+
+    return () => {
+      if (videoClockFrameRef.current) {
+        cancelAnimationFrame(videoClockFrameRef.current)
+        videoClockFrameRef.current = null
+      }
+    }
+  }, [isPlaying, knownDuration, setCurrentTime, setDuration, shouldUseVideoEngine, videoSrc])
 
   useEffect(() => {
     const video = videoRef.current
@@ -562,12 +604,16 @@ export function VideoPlayer() {
         playsInline
         onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
         onLoadedMetadata={(e) => {
-          setDuration(e.currentTarget.duration)
+          const mediaDuration = e.currentTarget.duration
+          setDuration(Number.isFinite(mediaDuration) && mediaDuration > 0 ? mediaDuration : knownDuration)
           if (currentTime > 0 && Math.abs(e.currentTarget.currentTime - currentTime) > 0.5) {
             e.currentTarget.currentTime = currentTime
           }
         }}
-        onDurationChange={(e) => setDuration(e.currentTarget.duration)}
+        onDurationChange={(e) => {
+          const mediaDuration = e.currentTarget.duration
+          setDuration(Number.isFinite(mediaDuration) && mediaDuration > 0 ? mediaDuration : knownDuration)
+        }}
         onEnded={() => setIsPlaying(false)}
         onError={() => {
           if (!offlineVideoUrl) void tryOfflineVideoFallback()

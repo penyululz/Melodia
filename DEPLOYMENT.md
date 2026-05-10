@@ -121,6 +121,7 @@ Set these paths in the app environment later:
 YT_DLP_PATH=/home/melodia/.local/bin/yt-dlp
 YT_DLP_JS_RUNTIME=node:/usr/bin/node
 YT_DLP_COOKIES_PATH=/var/www/melodia/shared/youtube-cookies.txt
+YT_DLP_STREAM_FIRST=1
 FFMPEG_PATH=/usr/bin/ffmpeg
 ```
 
@@ -159,6 +160,7 @@ MAX_UPLOAD_REQUEST_MB=2048
 YT_DLP_PATH=/home/melodia/.local/bin/yt-dlp
 YT_DLP_JS_RUNTIME=node:/usr/bin/node
 YT_DLP_COOKIES_PATH=/var/www/melodia/shared/youtube-cookies.txt
+YT_DLP_STREAM_FIRST=1
 FFMPEG_PATH=/usr/bin/ffmpeg
 
 GOOGLE_API_KEY=

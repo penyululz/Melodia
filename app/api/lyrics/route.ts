@@ -80,10 +80,12 @@ async function fetchLyrics(query: {
   duration: string
 }): Promise<LyricsResponse> {
   const { title, artist, album, duration } = query
+  const lookupTitle = normalizeSongTitle(title) || title
+  const lookupAlbum = normalizeSongTitle(album) || album
 
   // Try exact match first
-  const params = new URLSearchParams({ track_name: title, artist_name: artist })
-  if (album) params.set("album_name", album)
+  const params = new URLSearchParams({ track_name: lookupTitle, artist_name: artist })
+  if (lookupAlbum) params.set("album_name", lookupAlbum)
   if (duration) params.set("duration", duration)
 
   const res = await fetchLrcLib(`https://lrclib.net/api/get?${params.toString()}`)
@@ -97,7 +99,7 @@ async function fetchLyrics(query: {
 
   // Fallback: search
   const searchRes = await fetchLrcLib(
-    `https://lrclib.net/api/search?track_name=${encodeURIComponent(title)}&artist_name=${encodeURIComponent(artist)}`
+    `https://lrclib.net/api/search?track_name=${encodeURIComponent(lookupTitle)}&artist_name=${encodeURIComponent(artist)}`
   )
 
   if (searchRes.ok) {
@@ -129,7 +131,7 @@ async function fetchLrcLib(url: string): Promise<Response> {
       Accept: "application/json",
     },
     next: { revalidate: 3600 },
-    signal: AbortSignal.timeout(3500),
+    signal: AbortSignal.timeout(8000),
   })
   spendQuota(LRCLIB_PROVIDER, 1)
   return response

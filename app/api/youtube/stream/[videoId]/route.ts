@@ -71,16 +71,27 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Get the best stream URL based on mode and quality
-    let stream = mode === "video"
-      ? await getBestVideoStream(videoId, targetBitrate)
-      : await getBestAudioStream(videoId, targetBitrate)
+    // Prefer native yt-dlp when cookies are configured. Public proxy instances are useful
+    // for demos, but production VPS IPs are often challenged by YouTube and slow to fail.
+    const preferYtDlp = shouldPreferYtDlpStream()
+    let stream = preferYtDlp
+      ? await getYtDlpStream(videoId, quality, mode).catch((error) => {
+          console.warn("[v0] yt-dlp direct stream failed, trying public stream providers:", error)
+          return null
+        })
+      : null
 
     if (!stream) {
+      stream = mode === "video"
+        ? await getBestVideoStream(videoId, targetBitrate)
+        : await getBestAudioStream(videoId, targetBitrate)
+    }
+
+    if (!stream && !preferYtDlp) {
       stream = await getYtDlpStream(videoId, quality, mode).catch((error) => {
-        console.warn("[v0] yt-dlp direct stream fallback failed, trying local download:", error)
-        return null
-      })
+          console.warn("[v0] yt-dlp direct stream fallback failed, trying local download:", error)
+          return null
+        })
     }
     
     if (!stream) {
@@ -187,6 +198,13 @@ function normalizeQuality(value: string | null): YtDownloadQuality {
 
 function normalizeMode(value: string | null): YtDownloadMediaType {
   return STREAM_MODES.has(value || "") ? (value as YtDownloadMediaType) : "audio"
+}
+
+function shouldPreferYtDlpStream(): boolean {
+  return Boolean(
+    process.env.YT_DLP_STREAM_FIRST === "1" ||
+      process.env.YT_DLP_COOKIES_PATH?.trim()
+  )
 }
 
 function serveLocalFile(filePath: string, range: string | null): NextResponse {

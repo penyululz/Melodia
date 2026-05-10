@@ -24,6 +24,18 @@ function getNumericTrackId(track: { id?: number | string } | null): number | nul
 
 const OFFLINE_FALLBACK_TIMEOUT_MS = 4500
 
+function getUsableDuration(mediaDuration: number | null | undefined, fallbackDuration: number | null | undefined): number {
+  if (typeof mediaDuration === "number" && Number.isFinite(mediaDuration) && mediaDuration > 0) {
+    return mediaDuration
+  }
+
+  if (typeof fallbackDuration === "number" && Number.isFinite(fallbackDuration) && fallbackDuration > 0) {
+    return fallbackDuration
+  }
+
+  return 0
+}
+
 export function useAudioPlayer() {
   const { playbackMode, streamingQuality, pauseWatchHistory } = useSettingsStore()
   const offlineUrlRef = useRef<string | null>(null)
@@ -101,6 +113,10 @@ export function useAudioPlayer() {
     }
 
     const activeTrack = currentTrack
+    const knownDuration = getUsableDuration(null, activeTrack.duration)
+    if (knownDuration > 0) {
+      setDuration(knownDuration)
+    }
 
     // Determine audio source based on track type and settings
     const youtubeVideoId = getYouTubeVideoIdFromTrack(activeTrack)
@@ -174,7 +190,7 @@ export function useAudioPlayer() {
         onload: () => {
           clearOfflineFallbackTimer()
           if (howlRef.current) {
-            setDuration(howlRef.current.duration())
+            setDuration(getUsableDuration(howlRef.current.duration(), activeTrack.duration))
             if (resumeTime > 0) {
               howlRef.current.seek(resumeTime)
               setCurrentTime(resumeTime)

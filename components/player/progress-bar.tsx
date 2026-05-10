@@ -9,11 +9,19 @@ interface ProgressBarProps {
 }
 
 export function ProgressBar({ onSeek }: ProgressBarProps) {
-  const { currentTime, duration } = usePlayerStore()
+  const { currentTrack, currentTime, duration: playerDuration } = usePlayerStore()
 
+  const trackDuration = Number(currentTrack?.duration)
+  const duration =
+    playerDuration > 0
+      ? playerDuration
+      : Number.isFinite(trackDuration) && trackDuration > 0
+        ? trackDuration
+        : 0
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0
 
   const handleSeek = (value: number[]) => {
+    if (duration <= 0) return
     const time = (value[0] / 100) * duration
     onSeek(time)
   }

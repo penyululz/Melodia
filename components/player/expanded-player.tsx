@@ -95,7 +95,13 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
   const { isCollapsed } = useSidebarStore()
   const { playbackMode, setPlaybackMode, streamingQuality, pauseWatchHistory } = useSettingsStore()
   const currentTime = playerCurrentTime
-  const duration = playerDuration
+  const trackDuration = Number(currentTrack?.duration)
+  const duration =
+    playerDuration > 0
+      ? playerDuration
+      : Number.isFinite(trackDuration) && trackDuration > 0
+        ? trackDuration
+        : 0
   const [activeTab, setActiveTab] = useState<"queue" | "lyrics" | "related">("queue")
   const [liked, setLiked] = useState(false)
   const [disliked, setDisliked] = useState(false)
@@ -113,6 +119,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
     : null
 
   const handleSeek = (value: number[]) => {
+    if (duration <= 0) return
     const nextTime = (value[0] / 100) * duration
     seekToPlayback(nextTime)
   }
@@ -287,8 +294,14 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
       preload="auto"
       playsInline
       onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-      onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
-      onDurationChange={(event) => setDuration(event.currentTarget.duration)}
+      onLoadedMetadata={(event) => {
+        const mediaDuration = event.currentTarget.duration
+        setDuration(Number.isFinite(mediaDuration) && mediaDuration > 0 ? mediaDuration : duration)
+      }}
+      onDurationChange={(event) => {
+        const mediaDuration = event.currentTarget.duration
+        setDuration(Number.isFinite(mediaDuration) && mediaDuration > 0 ? mediaDuration : duration)
+      }}
       onEnded={() => setIsPlaying(false)}
       onPlay={recordVideoPlay}
     >

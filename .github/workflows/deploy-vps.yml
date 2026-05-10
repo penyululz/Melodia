@@ -1,5 +1,9 @@
 name: Deploy Melodia to VPS
 
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+  MELODIA_BUILD_DB: "1"
+
 on:
   push:
     branches:
@@ -118,7 +122,7 @@ jobs:
           cd "$RELEASE_DIR"
           corepack enable
           corepack pnpm install --frozen-lockfile
-          corepack pnpm build
+          NEXT_TELEMETRY_DISABLED=1 MELODIA_BUILD_DB=1 corepack pnpm build
 
           ln -sfn "$RELEASE_DIR" "$APP_ROOT/current"
           sudo systemctl restart melodia

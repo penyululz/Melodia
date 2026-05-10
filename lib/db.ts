@@ -2,22 +2,19 @@ import "server-only"
 import Database from "better-sqlite3"
 import path from "path"
 import fs from "fs"
+import os from "os"
 
 // In-memory fallback for development/preview environments
 let db: any
 
 try {
   // Try to initialize real SQLite database
-  const dataDir = path.join(process.cwd(), "data")
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true })
-  }
-
-  const dbPath = path.join(dataDir, "music.db")
+  const dbPath = getDatabasePath()
   db = new Database(dbPath)
 
   // Enable WAL mode for better concurrent performance
   db.pragma("journal_mode = WAL")
+  db.pragma("busy_timeout = 5000")
 } catch (error) {
   console.warn("[v0] SQLite initialization failed, using in-memory fallback:", error)
   // Fallback for preview environments
@@ -31,6 +28,25 @@ try {
     }),
     transaction: (fn: () => void) => fn,
   }
+}
+
+function getDatabasePath(): string {
+  if (isBuildPhase()) {
+    const buildDir = path.join(os.tmpdir(), "melodia-build-db")
+    fs.mkdirSync(buildDir, { recursive: true })
+    return path.join(buildDir, `music-${process.pid}.db`)
+  }
+
+  const dataDir = path.join(process.cwd(), "data")
+  fs.mkdirSync(dataDir, { recursive: true })
+  return path.join(dataDir, "music.db")
+}
+
+function isBuildPhase(): boolean {
+  return (
+    process.env.MELODIA_BUILD_DB === "1" ||
+    process.env.NEXT_PHASE === "phase-production-build"
+  )
 }
 
 // Initialize database schema

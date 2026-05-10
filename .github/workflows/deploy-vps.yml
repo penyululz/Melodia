@@ -85,21 +85,40 @@ jobs:
           rm -rf "$STAGING_DIR"
 
       - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
+          test -n "$VPS_HOST" || (echo "VPS_HOST secret is missing" && exit 1)
+          test -n "$VPS_USER" || (echo "VPS_USER secret is missing" && exit 1)
+          test -n "$VPS_SSH_KEY" || (echo "VPS_SSH_KEY secret is missing" && exit 1)
+
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/melodia_deploy_key
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > ~/.ssh/melodia_deploy_key
           chmod 600 ~/.ssh/melodia_deploy_key
-          ssh-keyscan -p "$SSH_PORT" "$VPS_HOST" >> ~/.ssh/known_hosts
+
+          cat > ~/.ssh/config <<EOF
+          Host melodia-vps
+            HostName $VPS_HOST
+            User $VPS_USER
+            Port $SSH_PORT
+            IdentityFile ~/.ssh/melodia_deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking accept-new
+            ServerAliveInterval 30
+            ConnectTimeout 20
+          EOF
+          chmod 600 ~/.ssh/config
+
+          ssh-keyscan -p "$SSH_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Upload release
         run: |
-          scp -P "$SSH_PORT" -i ~/.ssh/melodia_deploy_key melodia-release.tgz "$VPS_USER@$VPS_HOST:/tmp/melodia-release-${GITHUB_SHA}.tgz"
+          scp melodia-release.tgz melodia-vps:/tmp/melodia-release-${GITHUB_SHA}.tgz
 
       - name: Activate release
         run: |
-          ssh -p "$SSH_PORT" -i ~/.ssh/melodia_deploy_key "$VPS_USER@$VPS_HOST" \
-            "APP_ROOT='$APP_ROOT' DEPLOY_SHA='$GITHUB_SHA' bash -s" <<'REMOTE'
+          ssh melodia-vps "APP_ROOT='$APP_ROOT' DEPLOY_SHA='$GITHUB_SHA' bash -s" <<'REMOTE'
           set -euo pipefail
 
           RELEASE_DIR="$APP_ROOT/releases/$DEPLOY_SHA"

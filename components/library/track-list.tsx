@@ -2,11 +2,12 @@
 
 import { useState } from "react"
 import Image from "next/image"
-import useSWR, { mutate } from "swr"
+import { mutate } from "swr"
 import { usePlayerStore, Track } from "@/stores/player-store"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { AddToPlaylistSubmenu } from "@/components/playlists/add-to-playlist-menu"
 import {
   Dialog,
   DialogContent,
@@ -20,7 +21,6 @@ import {
   Check,
   Download,
   Heart,
-  ListPlus,
   Loader2,
   MoreHorizontal,
   Music,
@@ -36,9 +36,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
@@ -60,12 +57,6 @@ interface TrackListProps {
   onTrackDeleted?: (trackId: string | number) => void
 }
 
-interface Playlist {
-  id: string | number
-  name: string
-  track_count?: number
-}
-
 interface EditTrackForm {
   title: string
   artist: string
@@ -73,8 +64,6 @@ interface EditTrackForm {
   genre: string
   year: string
 }
-
-const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
 function isYouTubeTrack(track: Track): boolean {
   return track.source === "youtube" && Boolean(track.videoId)
@@ -104,10 +93,6 @@ export function TrackList({
   const { currentTrack, isPlaying, playTrack, togglePlay, addToQueue } =
     usePlayerStore()
   const settings = useSettingsStore()
-  const { data: playlists = [] } = useSWR<Playlist[]>("/api/playlists", fetcher)
-  const availablePlaylists = playlists.filter((playlist) =>
-    Number.isInteger(Number(playlist.id))
-  )
   const [editingTrack, setEditingTrack] = useState<Track | null>(null)
   const [editForm, setEditForm] = useState<EditTrackForm>({
     title: "",
@@ -185,53 +170,23 @@ export function TrackList({
     }
   }
 
-  const addTrackToPlaylist = async (track: Track, playlist: Playlist) => {
-    let trackId = getNumericTrackId(track)
-    if (!trackId) {
-      const canResolveCachedTrack = isYouTubeTrack(track) && getTrackCached(track)
-      if (!isYouTubeTrack(track) || (!settings.autoDownloadLibraryActions && !canResolveCachedTrack)) {
-        toast.error("Download this song before adding it to a playlist")
-        return
-      }
-
-      trackId = await ensureYouTubeDownloaded(track, getAutoDownloadMediaType(), {
-        successMessage: `Saved locally for ${playlist.name}`,
-      })
-      if (!trackId) return
-    }
-
-    try {
-      const response = await fetch(`/api/playlists/${playlist.id}/tracks`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ track_id: trackId }),
-      })
-      const data = await response.json().catch(() => null)
-
-      if (!response.ok) {
-        throw new Error(data?.error || "Failed to add track")
-      }
-
-      toast.success(
-        data?.alreadyAdded ? "Track is already in that playlist" : `Added to ${playlist.name}`
-      )
-      mutate("/api/playlists")
-      mutate(`/api/playlists/${playlist.id}/tracks`)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to add track")
-    }
-  }
-
   const removeTrackFromPlaylist = async (track: Track) => {
     if (!playlistId) return
+    const trackIsYouTube = isYouTubeTrack(track)
+    const videoId = track.videoId || (trackIsYouTube ? String(track.id) : null)
     const trackId = getNumericTrackId(track)
-    if (!trackId) return
+    if (!trackIsYouTube && !trackId) return
+    if (trackIsYouTube && !videoId) return
 
     try {
       const response = await fetch(`/api/playlists/${playlistId}/tracks`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ track_id: trackId }),
+        body: JSON.stringify(
+          trackIsYouTube
+            ? { yt_video_id: videoId }
+            : { track_id: trackId }
+        ),
       })
       const data = await response.json().catch(() => null)
 
@@ -241,8 +196,10 @@ export function TrackList({
 
       toast.success("Removed from playlist")
       mutate("/api/playlists")
+      mutate(`/api/playlists/${playlistId}`)
       mutate(`/api/playlists/${playlistId}/tracks`)
-      onPlaylistTrackRemoved?.(trackId)
+      const removedTrackId = trackIsYouTube ? videoId : trackId
+      if (removedTrackId) onPlaylistTrackRemoved?.(removedTrackId)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to remove track")
     }
@@ -428,7 +385,6 @@ export function TrackList({
             ? currentTrack?.source === "youtube" && currentTrack.videoId === track.videoId
             : currentTrack?.source !== "youtube" && currentTrack?.id === track.id
           const isTrackPlaying = isCurrentTrack && isPlaying
-          const numericTrackId = getNumericTrackId(track)
           const isCached = getTrackCached(track)
           const isFavorite = getTrackFavorite(track)
           const thumbnail = track.cover_art_path || (track as Track & { thumbnailUrl?: string | null }).thumbnailUrl
@@ -442,7 +398,7 @@ export function TrackList({
               )}
             >
               <div className="w-8 text-center text-sm text-muted-foreground">
-                <span className="group-hover:hidden">
+                <span className="hidden sm:inline group-hover:hidden">
                   {isTrackPlaying ? (
                     <span className="flex items-center justify-center">
                       <span className="flex gap-0.5">
@@ -458,8 +414,9 @@ export function TrackList({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="hidden h-8 w-8 group-hover:flex"
+                  className="flex h-8 w-8 sm:hidden sm:group-hover:flex"
                   onClick={() => handlePlay(track)}
+                  title={isTrackPlaying ? "Pause" : "Play"}
                 >
                   {isTrackPlaying ? (
                     <Pause className="h-4 w-4" />
@@ -515,10 +472,11 @@ export function TrackList({
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  "h-8 w-8 opacity-0 group-hover:opacity-100",
+                  "h-8 w-8 opacity-100 sm:opacity-0 sm:group-hover:opacity-100",
                   isFavorite && "text-primary opacity-100"
                 )}
                 onClick={() => toggleFavorite(track)}
+                title={isFavorite ? "Remove favorite" : "Favorite"}
               >
                 <Heart className={cn("h-4 w-4", isFavorite && "fill-current")} />
               </Button>
@@ -528,7 +486,8 @@ export function TrackList({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 opacity-0 group-hover:opacity-100"
+                    className="h-8 w-8 opacity-100"
+                    title="Track actions"
                   >
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
@@ -540,33 +499,7 @@ export function TrackList({
                   <DropdownMenuItem onClick={() => addToQueue(track)}>
                     Add to Queue
                   </DropdownMenuItem>
-                  {numericTrackId || (trackIsYouTube && (settings.autoDownloadLibraryActions || isCached)) ? (
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        <ListPlus className="h-4 w-4" />
-                        Add to Playlist
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="max-h-64 w-56 overflow-y-auto">
-                        {availablePlaylists.length === 0 ? (
-                          <DropdownMenuItem disabled>No playlists</DropdownMenuItem>
-                        ) : (
-                          availablePlaylists.map((playlist) => (
-                            <DropdownMenuItem
-                              key={playlist.id}
-                              onClick={() => addTrackToPlaylist(track, playlist)}
-                            >
-                              {playlist.name}
-                            </DropdownMenuItem>
-                          ))
-                        )}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                  ) : (
-                    <DropdownMenuItem onClick={() => downloadYouTubeTrack(track)}>
-                      <Download className="h-4 w-4" />
-                      Download to Add to Playlists
-                    </DropdownMenuItem>
-                  )}
+                  <AddToPlaylistSubmenu track={track} />
                   {playlistId && (
                     <DropdownMenuItem onClick={() => removeTrackFromPlaylist(track)}>
                       <X className="h-4 w-4" />

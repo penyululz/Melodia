@@ -84,6 +84,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     removePromotedYouTubeTrack(videoId)
     db.prepare("DELETE FROM listen_history WHERE yt_video_id = ?").run(videoId)
     db.prepare("DELETE FROM track_feedback WHERE yt_video_id = ?").run(videoId)
+    db.prepare("DELETE FROM playlist_youtube_tracks WHERE yt_track_id = ?").run(track.id)
     db.prepare("DELETE FROM yt_playlist_tracks WHERE yt_track_id = ?").run(track.id)
     db.prepare("DELETE FROM yt_tracks WHERE video_id = ?").run(videoId)
 

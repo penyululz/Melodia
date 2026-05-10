@@ -6,8 +6,14 @@ import { usePlayerStore, Track } from "@/stores/player-store"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
+import { AddToPlaylistSubmenu } from "@/components/playlists/add-to-playlist-menu"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { Play, ListPlus, Music, Youtube, Search, Plus } from "lucide-react"
+import { MoreHorizontal, Play, ListPlus, Music, Youtube, Search, Plus } from "lucide-react"
 import { mutate } from "swr"
 import { toast } from "sonner"
 import { useSettingsStore } from "@/stores/settings-store"
@@ -126,19 +132,7 @@ export function SearchDropdown({ query, isOpen, onClose, onSelect }: SearchDropd
   }, [pauseSearchHistory, preferOfficialYouTubeApi, query])
 
   const handlePlay = (result: SearchResult) => {
-    const track: Track = {
-      id: result.id,
-      title: result.title,
-      artist: result.artist,
-      album: result.album || null,
-      duration: result.duration || null,
-      cover_art_path: result.cover_art_path || result.thumbnailUrl || null,
-      source: result.source,
-      videoId: result.videoId,
-      content_type: result.content_type || "music",
-      podcast_title: result.podcast_title || null,
-      podcast_author: result.podcast_author || null,
-    }
+    const track = toPlayerTrack(result)
 
     if (result.source === "youtube") {
       playYTTrack(track)
@@ -151,19 +145,7 @@ export function SearchDropdown({ query, isOpen, onClose, onSelect }: SearchDropd
 
   const handleAddToQueue = (result: SearchResult, e: React.MouseEvent) => {
     e.stopPropagation()
-    const track: Track = {
-      id: result.id,
-      title: result.title,
-      artist: result.artist,
-      album: result.album || null,
-      duration: result.duration || null,
-      cover_art_path: result.cover_art_path || result.thumbnailUrl || null,
-      source: result.source,
-      videoId: result.videoId,
-      content_type: result.content_type || "music",
-      podcast_title: result.podcast_title || null,
-      podcast_author: result.podcast_author || null,
-    }
+    const track = toPlayerTrack(result)
 
     if (result.source === "youtube") {
       addYTToQueue(track)
@@ -329,11 +311,19 @@ function SearchResultRow({
   formatDuration: (s?: number) => string
 }) {
   const thumbnail = result.cover_art_path || result.thumbnailUrl || "/placeholder.svg?height=48&width=48"
+  const playlistTrack = toPlayerTrack(result)
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onPlay}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          onPlay()
+        }
+      }}
       className="group flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-accent"
     >
       {/* Thumbnail */}
@@ -373,7 +363,7 @@ function SearchResultRow({
           variant="ghost"
           size="icon"
           onClick={onSave}
-          className="h-8 w-8 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+          className="h-8 w-8 flex-shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
           title="Save to library"
         >
           <Plus className="h-4 w-4" />
@@ -385,10 +375,45 @@ function SearchResultRow({
         variant="ghost"
         size="icon"
         onClick={onAddToQueue}
-        className="h-8 w-8 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+        className="h-8 w-8 flex-shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+        title="Add to queue"
       >
         <ListPlus className="h-4 w-4" />
       </Button>
-    </button>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(event) => event.stopPropagation()}
+            className="h-8 w-8 flex-shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+            title="More actions"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <AddToPlaylistSubmenu track={playlistTrack} />
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   )
+}
+
+function toPlayerTrack(result: SearchResult): Track {
+  return {
+    id: result.id,
+    title: result.title,
+    artist: result.artist,
+    album: result.album || null,
+    duration: result.duration || null,
+    cover_art_path: result.cover_art_path || result.thumbnailUrl || null,
+    source: result.source,
+    videoId: result.videoId,
+    content_type: result.content_type || "music",
+    podcast_title: result.podcast_title || null,
+    podcast_author: result.podcast_author || null,
+    ...(result.thumbnailUrl ? { thumbnailUrl: result.thumbnailUrl } : {}),
+  } as Track
 }

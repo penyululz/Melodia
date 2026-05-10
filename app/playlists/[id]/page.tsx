@@ -1,8 +1,10 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { useParams } from "next/navigation"
 import { TrackList } from "@/components/library/track-list"
+import type { Track } from "@/stores/player-store"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -22,18 +24,6 @@ interface Playlist {
   name: string
   description: string | null
   track_count: number
-}
-
-interface Track {
-  id: string
-  title: string
-  artist: string | null
-  album: string | null
-  duration: number | null
-  genre: string | null
-  cover_art_path: string | null
-  file_path?: string
-  file_format?: string | null
 }
 
 export default function PlaylistDetailPage() {
@@ -196,7 +186,12 @@ export default function PlaylistDetailPage() {
         </div>
 
         {tracks.length === 0 ? (
-          <p className="py-12 text-center text-muted-foreground">No tracks in this playlist</p>
+          <div className="flex flex-col items-center justify-center rounded-lg border bg-card py-14 text-center">
+            <p className="mb-4 text-muted-foreground">No tracks in this playlist</p>
+            <Button asChild>
+              <Link href="/library">Add Music</Link>
+            </Button>
+          </div>
         ) : (
           <TrackList
             tracks={tracks}

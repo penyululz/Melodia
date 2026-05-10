@@ -2,10 +2,11 @@
 
 import { useMemo } from "react"
 import Image from "next/image"
-import { usePlayerStore } from "@/stores/player-store"
+import { usePlayerStore, type Track } from "@/stores/player-store"
 import { useSettingsStore, filterTracks, detectContentType } from "@/stores/settings-store"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { AddToPlaylistSubmenu } from "@/components/playlists/add-to-playlist-menu"
 import { formatDuration } from "@/lib/format"
 import { Play, Pause, Plus, Heart, MoreHorizontal, Youtube, Download, Video, Check, Loader2, Trash2 } from "lucide-react"
 import { useState } from "react"
@@ -53,37 +54,13 @@ export function YouTubeTrackList({
   }, [tracks, settings])
 
   const handlePlay = (track: YTTrackResult) => {
-    const ytTrack = {
-      id: track.videoId,
-      source: "youtube" as const,
-      videoId: track.videoId,
-      title: track.title,
-      artist: track.artist,
-      album: track.album,
-      duration: track.duration,
-      cover_art_path: track.thumbnailUrlHQ || track.thumbnailUrl,
-      content_type: track.content_type || "music",
-      podcast_title: track.podcast_title || null,
-      podcast_author: track.podcast_author || null,
-    }
+    const ytTrack = toPlayerTrack(track)
 
     if (currentTrack?.videoId === track.videoId) {
       togglePlay()
     } else {
       // Use filtered tracks for the queue
-      playYTTrack(ytTrack, filteredTracks.map(t => ({
-        id: t.videoId,
-        source: "youtube" as const,
-        videoId: t.videoId,
-        title: t.title,
-        artist: t.artist,
-        album: t.album,
-        duration: t.duration,
-        cover_art_path: t.thumbnailUrlHQ || t.thumbnailUrl,
-        content_type: t.content_type || "music",
-        podcast_title: t.podcast_title || null,
-        podcast_author: t.podcast_author || null,
-      })))
+      playYTTrack(ytTrack, filteredTracks.map(toPlayerTrack))
     }
   }
 
@@ -322,7 +299,7 @@ export function YouTubeTrackList({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 opacity-0 group-hover:opacity-100"
+                  className="h-8 w-8 opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                   onClick={() => saveToLibrary(track)}
                   title="Save to library"
                 >
@@ -333,7 +310,7 @@ export function YouTubeTrackList({
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    "h-8 w-8 opacity-0 group-hover:opacity-100",
+                    "h-8 w-8 opacity-100 sm:opacity-0 sm:group-hover:opacity-100",
                     track.is_favorite && "text-red-500 opacity-100"
                   )}
                   onClick={() => toggleFavorite(track.videoId)}
@@ -346,7 +323,7 @@ export function YouTubeTrackList({
                   size="icon"
                   className={cn(
                     "h-8 w-8",
-                    track.is_cached ? "text-green-500 opacity-100" : "opacity-0 group-hover:opacity-100"
+                    track.is_cached ? "text-green-500 opacity-100" : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                   )}
                   onClick={() => downloadTrack(track)}
                   disabled={downloadingIds.has(track.videoId)}
@@ -363,10 +340,10 @@ export function YouTubeTrackList({
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 opacity-0 group-hover:opacity-100"
-                    >
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                  >
                       <MoreHorizontal className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -375,20 +352,12 @@ export function YouTubeTrackList({
                       Play Now
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => addYTToQueue({
-                      id: track.videoId,
+                      ...toPlayerTrack(track),
                       source: "youtube",
-                      videoId: track.videoId,
-                      title: track.title,
-                      artist: track.artist,
-                      album: track.album,
-                      duration: track.duration,
-                      cover_art_path: track.thumbnailUrlHQ || track.thumbnailUrl,
-                      content_type: track.content_type || "music",
-                      podcast_title: track.podcast_title || null,
-                      podcast_author: track.podcast_author || null,
                     })}>
                       Add to Queue
                     </DropdownMenuItem>
+                    <AddToPlaylistSubmenu track={toPlayerTrack(track)} />
                     <DropdownMenuItem onClick={() => saveToLibrary(track)}>
                       Save to Library
                     </DropdownMenuItem>
@@ -418,4 +387,24 @@ export function YouTubeTrackList({
       })}
     </div>
   )
+}
+
+function toPlayerTrack(track: YTTrackResult): Track {
+  return {
+    id: track.videoId,
+    source: "youtube",
+    videoId: track.videoId,
+    title: track.title,
+    artist: track.artist,
+    album: track.album,
+    duration: track.duration,
+    cover_art_path: track.thumbnailUrlHQ || track.thumbnailUrl,
+    content_type: track.content_type || "music",
+    podcast_title: track.podcast_title || null,
+    podcast_author: track.podcast_author || null,
+    ...(track.thumbnailUrl ? { thumbnailUrl: track.thumbnailUrl } : {}),
+    ...(track.thumbnailUrlHQ ? { thumbnailUrlHQ: track.thumbnailUrlHQ } : {}),
+    is_cached: track.is_cached,
+    is_favorite: track.is_favorite,
+  } as Track
 }

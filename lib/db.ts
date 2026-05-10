@@ -123,6 +123,18 @@ db.exec(`
     FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS playlist_youtube_tracks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    playlist_id INTEGER NOT NULL,
+    yt_track_id INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    is_demo INTEGER DEFAULT 0,
+    added_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(playlist_id, yt_track_id),
+    FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+    FOREIGN KEY (yt_track_id) REFERENCES yt_tracks(id) ON DELETE CASCADE
+  );
+
   -- Users and sessions
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -217,6 +229,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_tracks_language ON tracks(language);
   CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist ON playlist_tracks(playlist_id);
   CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track ON playlist_tracks(track_id);
+  CREATE INDEX IF NOT EXISTS idx_playlist_youtube_tracks_playlist ON playlist_youtube_tracks(playlist_id);
+  CREATE INDEX IF NOT EXISTS idx_playlist_youtube_tracks_track ON playlist_youtube_tracks(yt_track_id);
   CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
   CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
@@ -317,6 +331,7 @@ ensureColumn("tracks", "replaygain_track_gain", "REAL")
 ensureColumn("tracks", "replaygain_album_gain", "REAL")
 ensureColumn("playlists", "is_demo", "INTEGER DEFAULT 0")
 ensureColumn("playlist_tracks", "is_demo", "INTEGER DEFAULT 0")
+ensureColumn("playlist_youtube_tracks", "is_demo", "INTEGER DEFAULT 0")
 ensureColumn("yt_tracks", "is_demo", "INTEGER DEFAULT 0")
 ensureColumn("yt_tracks", "cached_quality", "TEXT")
 ensureColumn("yt_tracks", "cached_media_type", "TEXT")
@@ -489,6 +504,28 @@ function runMigrations() {
         `)
       },
     },
+    {
+      id: 9,
+      name: "add_user_playlist_youtube_tracks",
+      run: () => {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS playlist_youtube_tracks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            playlist_id INTEGER NOT NULL,
+            yt_track_id INTEGER NOT NULL,
+            position INTEGER NOT NULL,
+            is_demo INTEGER DEFAULT 0,
+            added_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(playlist_id, yt_track_id),
+            FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+            FOREIGN KEY (yt_track_id) REFERENCES yt_tracks(id) ON DELETE CASCADE
+          );
+          CREATE INDEX IF NOT EXISTS idx_playlist_youtube_tracks_playlist ON playlist_youtube_tracks(playlist_id);
+          CREATE INDEX IF NOT EXISTS idx_playlist_youtube_tracks_track ON playlist_youtube_tracks(yt_track_id);
+        `)
+        ensureColumn("playlist_youtube_tracks", "is_demo", "INTEGER DEFAULT 0")
+      },
+    },
   ]
 
   for (const migration of migrations) {
@@ -591,6 +628,15 @@ export interface PlaylistTrack {
   id: number
   playlist_id: number
   track_id: number
+  position: number
+  is_demo: number
+  added_at: string
+}
+
+export interface PlaylistYouTubeTrack {
+  id: number
+  playlist_id: number
+  yt_track_id: number
   position: number
   is_demo: number
   added_at: string

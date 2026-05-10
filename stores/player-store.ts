@@ -121,6 +121,10 @@ function getSafeTime(time: number): number {
   return Number.isFinite(time) && time > 0 ? time : 0
 }
 
+function getSafeVolume(volume: number): number {
+  return Number.isFinite(volume) ? Math.min(1, Math.max(0, volume)) : 0.6
+}
+
 export const usePlayerStore = create<PlayerState>()(
   persist(
     (set, get) => ({
@@ -128,7 +132,7 @@ export const usePlayerStore = create<PlayerState>()(
       isPlaying: false,
       currentTime: 0,
       duration: 0,
-      volume: 0.8,
+      volume: 0.6,
       isMuted: false,
       isExpandedPlayerOpen: false,
       queue: [],
@@ -170,7 +174,7 @@ export const usePlayerStore = create<PlayerState>()(
 
       setDuration: (duration) => set({ duration: getInitialDuration({ duration }) }),
 
-      setVolume: (volume) => set({ volume, isMuted: false }),
+      setVolume: (volume) => set({ volume: getSafeVolume(volume), isMuted: false }),
 
       toggleMute: () => set((state) => ({ isMuted: !state.isMuted })),
 
@@ -355,6 +359,7 @@ export const usePlayerStore = create<PlayerState>()(
       name: "music-player-storage",
       partialize: (state) => ({
         volume: state.volume,
+        isMuted: state.isMuted,
         shuffle: state.shuffle,
         repeat: state.repeat,
       }),

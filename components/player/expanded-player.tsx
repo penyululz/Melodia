@@ -301,6 +301,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
       playsInline
       onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
       onLoadedMetadata={(event) => {
+        event.currentTarget.volume = isMuted ? 0 : volume
         const mediaDuration = event.currentTarget.duration
         setDuration(Number.isFinite(mediaDuration) && mediaDuration > 0 ? mediaDuration : duration)
       }}

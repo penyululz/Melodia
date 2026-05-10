@@ -15,10 +15,11 @@ export async function GET() {
         p.description,
         p.created_at,
         p.updated_at,
-        COUNT(pt.track_id) as track_count
+        (
+          (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = p.id) +
+          (SELECT COUNT(*) FROM playlist_youtube_tracks WHERE playlist_id = p.id)
+        ) as track_count
       FROM playlists p
-      LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
-      GROUP BY p.id
       ORDER BY p.name
     `).all()
 

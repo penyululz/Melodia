@@ -12,7 +12,10 @@ export const GET = async (req: NextRequest, { params }: RouteParams) => {
     const { id } = await params;
     const playlist = db.prepare(`
       SELECT id, name, description, created_at, updated_at,
-        (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = playlists.id) as track_count
+        (
+          (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = playlists.id) +
+          (SELECT COUNT(*) FROM playlist_youtube_tracks WHERE playlist_id = playlists.id)
+        ) as track_count
       FROM playlists
       WHERE id = ?
     `).get(id);
@@ -55,7 +58,10 @@ export const PUT = async (req: NextRequest, { params }: RouteParams) => {
 
     const playlist = db.prepare(`
       SELECT id, name, description, created_at, updated_at,
-        (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = playlists.id) as track_count
+        (
+          (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = playlists.id) +
+          (SELECT COUNT(*) FROM playlist_youtube_tracks WHERE playlist_id = playlists.id)
+        ) as track_count
       FROM playlists
       WHERE id = ?
     `).get(id);
@@ -74,6 +80,7 @@ export const DELETE = async (req: NextRequest, { params }: RouteParams) => {
     await requireMutationAuth(req);
     const { id } = await params;
     db.prepare('DELETE FROM playlist_tracks WHERE playlist_id = ?').run(id);
+    db.prepare('DELETE FROM playlist_youtube_tracks WHERE playlist_id = ?').run(id);
     db.prepare('DELETE FROM playlists WHERE id = ?').run(id);
     return NextResponse.json({ success: true });
   } catch (error) {

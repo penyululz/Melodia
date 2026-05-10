@@ -12,6 +12,7 @@ import {
   Upload,
   Disc3,
   Clock,
+  ListMusic,
   Sparkles,
   Compass,
   Zap,
@@ -37,6 +38,11 @@ export default function HomePage() {
   const recentTracks = homeData?.recentTracks || []
   const albums = homeData?.albums || []
   const mostPlayed = homeData?.mostPlayedTracks || []
+  const listenAgain = homeData?.listenAgain || []
+  const similarTracks = homeData?.similarTracks || []
+  const similarTitle = homeData?.similarTitle || "Similar to Your Music"
+  const playlistPicks = homeData?.playlistPicks || []
+  const trendingTracks = homeData?.trendingTracks || []
   const mixes = mixesData?.mixes ?? {}
 
   const totalDurationHours = stats?.total_duration
@@ -113,7 +119,7 @@ export default function HomePage() {
           </h1>
           <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
             {hasLocalMusic
-              ? `${stats?.total_tracks ?? 0} tracks · ${stats?.total_artists ?? 0} artists · ${totalDurationHours}h of music`
+              ? `${stats?.total_tracks ?? 0} tracks - ${stats?.total_artists ?? 0} artists - ${totalDurationHours}h of music`
               : "Upload music or use search to save songs"}
           </p>
         </div>
@@ -128,6 +134,50 @@ export default function HomePage() {
       </div>
 
       <MixCardCarousel title="Your Mixes" items={topMixCards} />
+
+      {/* Listen Again row */}
+      {listenAgain.length > 0 && (
+        <MixRow
+          title="Listen Again"
+          subtitle="Recently played songs, videos, and saved online tracks"
+          tracks={listenAgain}
+          accentColor="text-primary"
+          icon={<Clock className="h-4 w-4" />}
+        />
+      )}
+
+      {/* Similar row */}
+      {similarTracks.length > 0 && (
+        <MixRow
+          title={similarTitle}
+          subtitle="Based on matching artists, albums, genres, and listening signals"
+          tracks={similarTracks}
+          accentColor="text-cyan-400"
+          icon={<Radio className="h-4 w-4" />}
+        />
+      )}
+
+      {/* Playlist-trained row */}
+      {playlistPicks.length > 0 && (
+        <MixRow
+          title="From Your Playlists"
+          subtitle="Songs and videos your playlists say matter"
+          tracks={playlistPicks}
+          accentColor="text-emerald-400"
+          icon={<ListMusic className="h-4 w-4" />}
+        />
+      )}
+
+      {/* Trending for you row */}
+      {trendingTracks.length > 0 && (
+        <MixRow
+          title="Trending for You"
+          subtitle="Popular in your library, weighted by your taste"
+          tracks={trendingTracks}
+          accentColor="text-rose-400"
+          icon={<TrendingUp className="h-4 w-4" />}
+        />
+      )}
 
       {/* New Release Mix row */}
       {mixes.newReleaseMix?.length > 0 && (

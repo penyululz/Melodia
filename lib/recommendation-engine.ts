@@ -411,10 +411,21 @@ function addPlaylistSignals(signals: Map<number, Signal>) {
 
 function addYouTubePlaylistSignals(signals: Map<string, Signal>) {
   const rows = db.prepare(`
-    SELECT t.video_id, COUNT(*) as playlistCount
-    FROM yt_playlist_tracks pt
-    JOIN yt_tracks t ON t.id = pt.yt_track_id
-    GROUP BY t.video_id
+    SELECT video_id, SUM(playlistCount) as playlistCount
+    FROM (
+      SELECT t.video_id, COUNT(*) as playlistCount
+      FROM yt_playlist_tracks pt
+      JOIN yt_tracks t ON t.id = pt.yt_track_id
+      GROUP BY t.video_id
+
+      UNION ALL
+
+      SELECT t.video_id, COUNT(*) as playlistCount
+      FROM playlist_youtube_tracks pt
+      JOIN yt_tracks t ON t.id = pt.yt_track_id
+      GROUP BY t.video_id
+    )
+    GROUP BY video_id
   `).all() as { video_id: string; playlistCount: number }[]
 
   for (const row of rows) {
@@ -524,6 +535,21 @@ function addSimilarUserSignals(
 
     for (const row of rows) {
       updateSignal(ytSignals, row.yt_video_id, { similarUserScore: Number(row.score || 0) })
+    }
+
+    const playlistRows = db.prepare(`
+      SELECT other_track.video_id, COUNT(*) as score
+      FROM playlist_youtube_tracks seed
+      JOIN yt_tracks seed_track ON seed_track.id = seed.yt_track_id
+      JOIN playlist_youtube_tracks other ON other.playlist_id = seed.playlist_id
+      JOIN yt_tracks other_track ON other_track.id = other.yt_track_id
+      WHERE seed_track.video_id IN (${placeholders})
+        AND other_track.video_id NOT IN (${placeholders})
+      GROUP BY other_track.video_id
+    `).all(...seedVideoIds, ...seedVideoIds) as { video_id: string; score: number }[]
+
+    for (const row of playlistRows) {
+      updateSignal(ytSignals, row.video_id, { playlistCoScore: Number(row.score || 0) })
     }
   }
 }

@@ -150,6 +150,7 @@ export async function DELETE(
     }
 
     // Delete from database
+    db.prepare("DELETE FROM playlist_tracks WHERE track_id = ?").run(trackId)
     queries.deleteTrack.run(trackId)
 
     return NextResponse.json({ message: "Track deleted" })

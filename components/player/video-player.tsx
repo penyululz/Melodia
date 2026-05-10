@@ -165,10 +165,10 @@ export function VideoPlayer() {
   const suppressPauseStateRef = useRef(false)
   const { currentTrack, isPlaying, currentTime, volume, isMuted, isExpandedPlayerOpen, setCurrentTime, setDuration, setIsPlaying } = usePlayerStore()
   const { playbackMode, streamingQuality, pauseWatchHistory } = useSettingsStore()
-  const previousPlaybackModeRef = useRef(playbackMode)
   const [isExpanded, setIsExpanded] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
   const [audioHandoffActive, setAudioHandoffActive] = useState(false)
+  const [previousPlaybackMode, setPreviousPlaybackMode] = useState(playbackMode)
   const [dockRect, setDockRect] = useState<DockRect | null>(null)
   const [offlineVideoUrl, setOfflineVideoUrl] = useState<string | null>(null)
   const [floatingRect, setFloatingRect] = useState<FloatingRect | null>(null)
@@ -179,7 +179,7 @@ export function VideoPlayer() {
   const isLocalVideo = !isYouTube && currentTrack?.source !== "youtube" && hasVideoExtension(currentTrack || null)
   const canUseVideoTrack = Boolean(currentTrack && (isLocalVideo || isYouTube))
   const isVideoToAudioHandoff =
-    previousPlaybackModeRef.current === "video" &&
+    previousPlaybackMode === "video" &&
     playbackMode === "audio" &&
     canUseVideoTrack
   const shouldUseVideoEngine = Boolean(
@@ -218,6 +218,15 @@ export function VideoPlayer() {
     }
   }, [])
 
+  const applyVideoVolume = useCallback((video: HTMLVideoElement) => {
+    const playerState = usePlayerStore.getState()
+    video.volume = getNormalizedVolume(
+      playerState.volume,
+      playerState.isMuted,
+      playerState.currentTrack
+    )
+  }, [])
+
   const tryOfflineVideoFallback = useCallback(async () => {
     if (!currentTrack || offlineVideoUrlRef.current) return false
 
@@ -242,25 +251,27 @@ export function VideoPlayer() {
         nextVideo.currentTime = resumeTime
       }
       if (shouldResume) {
+        applyVideoVolume(nextVideo)
         syncVideoToPlayerTime(nextVideo)
         nextVideo.play().catch(reportPlayError)
       }
     })
 
     return true
-  }, [currentTrack?.id, currentTrack?.videoId, currentTrack?.file_path, syncVideoToPlayerTime])
+  }, [applyVideoVolume, currentTrack?.id, currentTrack?.videoId, currentTrack?.file_path, syncVideoToPlayerTime])
 
   const playVideoWhenReady = useCallback(() => {
     const video = videoRef.current
     if (!video || !shouldUseVideoEngine || !usePlayerStore.getState().isPlaying) return
 
+    applyVideoVolume(video)
     syncVideoToPlayerTime(video)
     video.play().catch((error) => {
       if (isAbortPlayError(error)) return
       reportPlayError(error)
       void tryOfflineVideoFallback()
     })
-  }, [shouldUseVideoEngine, syncVideoToPlayerTime, tryOfflineVideoFallback])
+  }, [applyVideoVolume, shouldUseVideoEngine, syncVideoToPlayerTime, tryOfflineVideoFallback])
 
   const updateDockRect = useCallback(() => {
     if (!isExpandedPlayerOpen || !shouldShowVideo) {
@@ -286,9 +297,7 @@ export function VideoPlayer() {
   }, [playbackMode, isYouTube, isLocalVideo, currentTrack?.id, currentTrack?.videoId, currentTrack?.file_path, knownDuration, setDuration])
 
   useEffect(() => {
-    const previousMode = previousPlaybackModeRef.current
-
-    if (previousMode === "video" && playbackMode === "audio" && canUseVideoTrack) {
+    if (previousPlaybackMode === "video" && playbackMode === "audio" && canUseVideoTrack) {
       const video = videoRef.current
       if (video && !video.paused) {
         setAudioHandoffActive(true)
@@ -299,8 +308,10 @@ export function VideoPlayer() {
       setAudioHandoffActive(false)
     }
 
-    previousPlaybackModeRef.current = playbackMode
-  }, [playbackMode, canUseVideoTrack])
+    if (previousPlaybackMode !== playbackMode) {
+      setPreviousPlaybackMode(playbackMode)
+    }
+  }, [playbackMode, canUseVideoTrack, previousPlaybackMode])
 
   useEffect(() => {
     let isCancelled = false
@@ -674,6 +685,7 @@ export function VideoPlayer() {
         playsInline
         onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
         onLoadedMetadata={(e) => {
+          applyVideoVolume(e.currentTarget)
           const mediaDuration = e.currentTarget.duration
           setDuration(Number.isFinite(mediaDuration) && mediaDuration > 0 ? mediaDuration : knownDuration)
           if (currentTime > 0 && Math.abs(e.currentTarget.currentTime - currentTime) > 0.5) {

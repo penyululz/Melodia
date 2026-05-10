@@ -28,11 +28,6 @@ export async function GET(request: NextRequest) {
     const ytTracks = db.prepare("SELECT * FROM yt_tracks ORDER BY created_at DESC").all() as YTTrack[]
     const profile = buildTasteProfile(user?.id ?? null, localTracks, ytTracks, request)
     const savedResults = searchSavedYouTubeTracks(query, safeLimit)
-    if (savedResults.length >= safeLimit) {
-      const results = rankYouTubeSearchResults(savedResults, query, profile)
-      recordSearchSignal(user?.id ?? null, query, "youtube", results.length, request)
-      return NextResponse.json({ results, source: "saved-youtube-cache" })
-    }
 
     const preferOfficialApi =
       request.headers.get("x-melodia-use-official-youtube") === "true" ||
@@ -116,8 +111,17 @@ function mergeSavedAndLiveResults<T extends { videoId: string }>(
 ): T[] {
   const seen = new Set<string>()
   const merged: T[] = []
+  const savedLeadCount = liveResults.length > 0
+    ? Math.min(savedResults.length, Math.max(1, Math.floor(limit / 3)))
+    : savedResults.length
 
-  for (const result of [...savedResults, ...liveResults]) {
+  const candidates = [
+    ...savedResults.slice(0, savedLeadCount),
+    ...liveResults,
+    ...savedResults.slice(savedLeadCount),
+  ]
+
+  for (const result of candidates) {
     if (seen.has(result.videoId)) continue
     seen.add(result.videoId)
     merged.push(result)

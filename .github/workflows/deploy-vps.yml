@@ -123,6 +123,10 @@ jobs:
           corepack enable
           corepack pnpm install --frozen-lockfile
           NEXT_TELEMETRY_DISABLED=1 MELODIA_BUILD_DB=1 corepack pnpm build
+          mkdir -p .next/standalone/.next
+          rm -rf .next/standalone/.next/static .next/standalone/public
+          cp -R .next/static .next/standalone/.next/static
+          cp -R public .next/standalone/public
 
           ln -sfn "$RELEASE_DIR" "$APP_ROOT/current"
           sudo systemctl restart melodia

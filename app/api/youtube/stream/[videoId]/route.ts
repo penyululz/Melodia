@@ -9,6 +9,7 @@ import {
   type YtDownloadQuality,
 } from "@/lib/yt-dlp"
 import { isAllowedServedMediaPath } from "@/lib/file-safety"
+import { getCachedJson, makeCacheKey, setCachedJson } from "@/lib/api-cache"
 import fs from "fs"
 
 type RouteParams = { params: Promise<{ videoId: string }> }
@@ -40,6 +41,7 @@ const QUALITY_BITRATES: Record<string, number> = {
 
 const STREAM_QUALITIES = new Set(["low", "normal", "high"])
 const STREAM_MODES = new Set(["audio", "video"])
+const DIRECT_STREAM_CACHE_TTL_SECONDS = 20 * 60
 
 interface StreamFormat {
   url: string
@@ -182,14 +184,20 @@ async function getYtDlpStream(
   quality: YtDownloadQuality,
   mode: YtDownloadMediaType
 ): Promise<StreamFormat | null> {
+  const cacheKey = makeCacheKey("yt-dlp-direct-stream", [videoId, quality, mode])
+  const cached = getCachedJson<StreamFormat>(cacheKey)
+  if (cached?.url) return cached
+
   const stream = await getYouTubeDirectStream(videoId, quality, mode)
-  return {
+  const format = {
     url: stream.url,
     bitrate: QUALITY_BITRATES[quality] || 256,
     mimeType: stream.mimeType,
     quality,
     isVideo: mode === "video",
   }
+  setCachedJson(cacheKey, format, getDirectStreamTtlSeconds(stream.url))
+  return format
 }
 
 function normalizeQuality(value: string | null): YtDownloadQuality {
@@ -205,6 +213,24 @@ function shouldPreferYtDlpStream(): boolean {
     process.env.YT_DLP_STREAM_FIRST === "1" ||
       process.env.YT_DLP_COOKIES_PATH?.trim()
   )
+}
+
+function getDirectStreamTtlSeconds(url: string): number {
+  try {
+    const expire = Number(new URL(url).searchParams.get("expire"))
+    if (Number.isFinite(expire) && expire > 0) {
+      const ttlMs = expire * 1000 - Date.now() - 60_000
+      const ttlSeconds = Math.floor(ttlMs / 1000)
+      if (ttlSeconds > 0) {
+        return Math.max(120, Math.min(DIRECT_STREAM_CACHE_TTL_SECONDS, ttlSeconds))
+      }
+      return 30
+    }
+  } catch {
+    // Use the conservative default below.
+  }
+
+  return DIRECT_STREAM_CACHE_TTL_SECONDS
 }
 
 function serveLocalFile(filePath: string, range: string | null): NextResponse {

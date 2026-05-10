@@ -14,7 +14,11 @@ import {
 } from "@/lib/offline-media"
 import { hasVideoExtension } from "@/lib/format"
 import { getNormalizedVolume } from "@/lib/audio-normalization"
-import { listenForPlaybackSeek } from "@/lib/playback-events"
+import {
+  listenForMediaEngineActive,
+  listenForPlaybackSeek,
+  notifyMediaEngineActive,
+} from "@/lib/playback-events"
 
 type DockRect = {
   left: number
@@ -107,8 +111,12 @@ function clampFloatingRect(rect: FloatingRect): FloatingRect {
   }
 }
 
+function isAbortPlayError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError"
+}
+
 function reportPlayError(error: unknown) {
-  if (error instanceof DOMException && error.name === "AbortError") return
+  if (isAbortPlayError(error)) return
   console.error(error)
 }
 
@@ -154,10 +162,13 @@ export function VideoPlayer() {
   const offlineFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const videoClockFrameRef = useRef<number | null>(null)
   const dragStateRef = useRef<DragState | null>(null)
+  const suppressPauseStateRef = useRef(false)
   const { currentTrack, isPlaying, currentTime, volume, isMuted, isExpandedPlayerOpen, setCurrentTime, setDuration, setIsPlaying } = usePlayerStore()
   const { playbackMode, streamingQuality, pauseWatchHistory } = useSettingsStore()
+  const previousPlaybackModeRef = useRef(playbackMode)
   const [isExpanded, setIsExpanded] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
+  const [audioHandoffActive, setAudioHandoffActive] = useState(false)
   const [dockRect, setDockRect] = useState<DockRect | null>(null)
   const [offlineVideoUrl, setOfflineVideoUrl] = useState<string | null>(null)
   const [floatingRect, setFloatingRect] = useState<FloatingRect | null>(null)
@@ -166,8 +177,15 @@ export function VideoPlayer() {
   const youtubeVideoId = getYouTubeVideoIdFromTrack(currentTrack || null)
   const isYouTube = Boolean(youtubeVideoId)
   const isLocalVideo = !isYouTube && currentTrack?.source !== "youtube" && hasVideoExtension(currentTrack || null)
+  const canUseVideoTrack = Boolean(currentTrack && (isLocalVideo || isYouTube))
+  const isVideoToAudioHandoff =
+    previousPlaybackModeRef.current === "video" &&
+    playbackMode === "audio" &&
+    canUseVideoTrack
   const shouldUseVideoEngine = Boolean(
-    currentTrack && playbackMode === "video" && (isLocalVideo || isYouTube)
+    currentTrack &&
+      canUseVideoTrack &&
+      (playbackMode === "video" || audioHandoffActive || isVideoToAudioHandoff)
   )
   const subtitleSrc = getSubtitleSource(currentTrack || null)
   const shouldShowVideo = Boolean(
@@ -190,6 +208,13 @@ export function VideoPlayer() {
     if (offlineFallbackTimerRef.current) {
       clearTimeout(offlineFallbackTimerRef.current)
       offlineFallbackTimerRef.current = null
+    }
+  }, [])
+
+  const syncVideoToPlayerTime = useCallback((video: HTMLVideoElement) => {
+    const targetTime = usePlayerStore.getState().currentTime
+    if (targetTime > 0 && Math.abs(video.currentTime - targetTime) > 0.5) {
+      video.currentTime = targetTime
     }
   }, [])
 
@@ -217,12 +242,25 @@ export function VideoPlayer() {
         nextVideo.currentTime = resumeTime
       }
       if (shouldResume) {
+        syncVideoToPlayerTime(nextVideo)
         nextVideo.play().catch(reportPlayError)
       }
     })
 
     return true
-  }, [currentTrack?.id, currentTrack?.videoId, currentTrack?.file_path])
+  }, [currentTrack?.id, currentTrack?.videoId, currentTrack?.file_path, syncVideoToPlayerTime])
+
+  const playVideoWhenReady = useCallback(() => {
+    const video = videoRef.current
+    if (!video || !shouldUseVideoEngine || !usePlayerStore.getState().isPlaying) return
+
+    syncVideoToPlayerTime(video)
+    video.play().catch((error) => {
+      if (isAbortPlayError(error)) return
+      reportPlayError(error)
+      void tryOfflineVideoFallback()
+    })
+  }, [shouldUseVideoEngine, syncVideoToPlayerTime, tryOfflineVideoFallback])
 
   const updateDockRect = useCallback(() => {
     if (!isExpandedPlayerOpen || !shouldShowVideo) {
@@ -246,6 +284,23 @@ export function VideoPlayer() {
       if (knownDuration > 0) setDuration(knownDuration)
     }
   }, [playbackMode, isYouTube, isLocalVideo, currentTrack?.id, currentTrack?.videoId, currentTrack?.file_path, knownDuration, setDuration])
+
+  useEffect(() => {
+    const previousMode = previousPlaybackModeRef.current
+
+    if (previousMode === "video" && playbackMode === "audio" && canUseVideoTrack) {
+      const video = videoRef.current
+      if (video && !video.paused) {
+        setAudioHandoffActive(true)
+      }
+    }
+
+    if (playbackMode === "video") {
+      setAudioHandoffActive(false)
+    }
+
+    previousPlaybackModeRef.current = playbackMode
+  }, [playbackMode, canUseVideoTrack])
 
   useEffect(() => {
     let isCancelled = false
@@ -349,14 +404,29 @@ export function VideoPlayer() {
     if (!video || !shouldUseVideoEngine) return
 
     if (isPlaying) {
-      video.play().catch((error) => {
-        reportPlayError(error)
-        void tryOfflineVideoFallback()
-      })
+      playVideoWhenReady()
     } else {
       video.pause()
     }
-  }, [isPlaying, shouldUseVideoEngine, tryOfflineVideoFallback])
+  }, [isPlaying, playVideoWhenReady, shouldUseVideoEngine])
+
+  useEffect(() => {
+    return listenForMediaEngineActive(({ engine }) => {
+      if (engine !== "audio") return
+      if (!audioHandoffActive && playbackMode !== "audio") return
+
+      const video = videoRef.current
+      if (video) {
+        suppressPauseStateRef.current = true
+        video.pause()
+        window.setTimeout(() => {
+          suppressPauseStateRef.current = false
+        }, 0)
+      }
+
+      setAudioHandoffActive(false)
+    })
+  }, [audioHandoffActive, playbackMode])
 
   useEffect(() => {
     if (!shouldUseVideoEngine || !isPlaying) {
@@ -610,6 +680,16 @@ export function VideoPlayer() {
             e.currentTarget.currentTime = currentTime
           }
         }}
+        onLoadedData={playVideoWhenReady}
+        onCanPlay={playVideoWhenReady}
+        onPlaying={(e) => {
+          clearOfflineFallbackTimer()
+          const liveTime = e.currentTarget.currentTime
+          setCurrentTime(liveTime)
+          if (playbackMode === "video") {
+            notifyMediaEngineActive("video", liveTime)
+          }
+        }}
         onDurationChange={(e) => {
           const mediaDuration = e.currentTarget.duration
           setDuration(Number.isFinite(mediaDuration) && mediaDuration > 0 ? mediaDuration : knownDuration)
@@ -627,6 +707,8 @@ export function VideoPlayer() {
         }}
         onPlay={recordPlay}
         onPause={() => {
+          if (suppressPauseStateRef.current || audioHandoffActive || playbackMode === "audio") return
+
           const playerState = usePlayerStore.getState()
           const settingsState = useSettingsStore.getState()
 

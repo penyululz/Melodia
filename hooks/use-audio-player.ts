@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback } from "react"
 import { Howl } from "howler"
-import { usePlayerStore } from "@/stores/player-store"
+import { usePlayerStore, type Track } from "@/stores/player-store"
 import { useSettingsStore } from "@/stores/settings-store"
 import {
   getBestTrackMediaUrl,
@@ -11,7 +11,11 @@ import {
 } from "@/lib/offline-media"
 import { hasVideoExtension, HOWLER_FORMATS } from "@/lib/format"
 import { getNormalizedVolume } from "@/lib/audio-normalization"
-import { listenForPlaybackSeek } from "@/lib/playback-events"
+import {
+  listenForMediaEngineActive,
+  listenForPlaybackSeek,
+  notifyMediaEngineActive,
+} from "@/lib/playback-events"
 
 function getHowlerFormats(track: { source?: string; file_format?: string | null; file_path?: string } | null) {
   return track ? HOWLER_FORMATS : undefined
@@ -20,6 +24,16 @@ function getHowlerFormats(track: { source?: string; file_format?: string | null;
 function getNumericTrackId(track: { id?: number | string } | null): number | null {
   const id = Number(track?.id)
   return Number.isInteger(id) && id > 0 ? id : null
+}
+
+function getTrackMediaKey(track: Partial<Track> | null): string | null {
+  if (!track) return null
+
+  const videoId = getYouTubeVideoIdFromTrack(track)
+  if (videoId) return `youtube:${videoId}`
+
+  if (track.id !== undefined && track.id !== null) return `local:${track.id}`
+  return track.file_path ? `file:${track.file_path}` : null
 }
 
 const OFFLINE_FALLBACK_TIMEOUT_MS = 4500
@@ -42,6 +56,8 @@ export function useAudioPlayer() {
   const howlRef = useRef<Howl | null>(null)
   const animationRef = useRef<number | null>(null)
   const recordedPlayKeyRef = useRef<string | null>(null)
+  const loadedTrackKeyRef = useRef<string | null>(null)
+  const suppressPauseStateRef = useRef(false)
 
   const {
     currentTrack,
@@ -89,6 +105,7 @@ export function useAudioPlayer() {
         howlRef.current.unload()
         howlRef.current = null
       }
+      loadedTrackKeyRef.current = null
       if (offlineUrlRef.current) {
         URL.revokeObjectURL(offlineUrlRef.current)
         offlineUrlRef.current = null
@@ -96,23 +113,8 @@ export function useAudioPlayer() {
       return
     }
 
-    // Unload previous track
-    if (howlRef.current) {
-      howlRef.current.unload()
-    }
-
-    // Cancel animation frame
-    if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current)
-    }
-
-    // Revoke old offline URL
-    if (offlineUrlRef.current) {
-      URL.revokeObjectURL(offlineUrlRef.current)
-      offlineUrlRef.current = null
-    }
-
     const activeTrack = currentTrack
+    const activeTrackKey = getTrackMediaKey(activeTrack)
     const knownDuration = getUsableDuration(null, activeTrack.duration)
     if (knownDuration > 0) {
       setDuration(knownDuration)
@@ -123,11 +125,45 @@ export function useAudioPlayer() {
     const isYouTube = Boolean(youtubeVideoId)
     const isLocalVideoTrack = !isYouTube && activeTrack.source !== "youtube" && hasVideoExtension(activeTrack)
     const shouldSkipAudio = playbackMode === "video" && (isYouTube || isLocalVideoTrack)
+    const hasBridgeAudio =
+      Boolean(howlRef.current) &&
+      Boolean(activeTrackKey) &&
+      loadedTrackKeyRef.current === activeTrackKey
+
+    const stopAudio = () => {
+      if (howlRef.current) {
+        howlRef.current.unload()
+        howlRef.current = null
+      }
+      loadedTrackKeyRef.current = null
+
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current)
+        animationRef.current = null
+      }
+
+      if (offlineUrlRef.current) {
+        URL.revokeObjectURL(offlineUrlRef.current)
+        offlineUrlRef.current = null
+      }
+    }
 
     if (shouldSkipAudio) {
-      howlRef.current = null
+      if (!hasBridgeAudio) {
+        stopAudio()
+        return
+      }
+
+      if (isPlaying && howlRef.current?.playing()) {
+        animationRef.current = requestAnimationFrame(updateTime)
+      } else if (!isPlaying && howlRef.current?.playing()) {
+        howlRef.current.pause()
+      }
+
       return
     }
+
+    stopAudio()
 
     const swapToOffline = async (resumeFrom?: number) => {
       const offlineMedia = await getOfflineObjectUrlForTrack(activeTrack, [
@@ -167,6 +203,7 @@ export function useAudioPlayer() {
 
     function startHowl(audioSrc: string, resumeTime: number, usingOffline: boolean) {
       clearOfflineFallbackTimer()
+      loadedTrackKeyRef.current = activeTrackKey
 
       const scheduleOfflineFallback = () => {
         if (usingOffline || !usePlayerStore.getState().isPlaying) return
@@ -217,6 +254,11 @@ export function useAudioPlayer() {
           clearOfflineFallbackTimer()
           setIsPlaying(true)
           animationRef.current = requestAnimationFrame(updateTime)
+          const seek = howlRef.current?.seek()
+          notifyMediaEngineActive(
+            "audio",
+            typeof seek === "number" ? seek : usePlayerStore.getState().currentTime
+          )
 
           const playKey =
             activeTrack.source === "youtube" && activeTrack.videoId
@@ -267,15 +309,20 @@ export function useAudioPlayer() {
         },
         onpause: () => {
           clearOfflineFallbackTimer()
-          setIsPlaying(false)
           if (animationRef.current) {
             cancelAnimationFrame(animationRef.current)
+            animationRef.current = null
+          }
+
+          if (!suppressPauseStateRef.current) {
+            setIsPlaying(false)
           }
         },
         onend: () => {
           clearOfflineFallbackTimer()
           if (animationRef.current) {
             cancelAnimationFrame(animationRef.current)
+            animationRef.current = null
           }
           playNext()
         },
@@ -326,9 +373,38 @@ export function useAudioPlayer() {
       clearOfflineFallbackTimer()
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current)
+        animationRef.current = null
       }
     }
   }, [currentTrack?.id, currentTrack?.videoId, currentTrack?.file_path, playbackMode, streamingQuality])
+
+  useEffect(() => {
+    return listenForMediaEngineActive(({ engine, time }) => {
+      if (engine !== "video") return
+      if (useSettingsStore.getState().playbackMode !== "video") return
+
+      const activeTrackKey = getTrackMediaKey(usePlayerStore.getState().currentTrack)
+      if (!activeTrackKey || loadedTrackKeyRef.current !== activeTrackKey) return
+
+      const activeHowl = howlRef.current
+      if (!activeHowl) return
+
+      suppressPauseStateRef.current = true
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current)
+        animationRef.current = null
+      }
+      activeHowl.pause()
+      activeHowl.unload()
+      howlRef.current = null
+      loadedTrackKeyRef.current = null
+      setCurrentTime(time)
+
+      window.setTimeout(() => {
+        suppressPauseStateRef.current = false
+      }, 0)
+    })
+  }, [setCurrentTime])
 
   // Handle play/pause changes
   useEffect(() => {
@@ -372,6 +448,34 @@ export function useAudioPlayer() {
 
     return () => controller.abort()
   }, [queue, queueIndex, streamingQuality])
+
+  useEffect(() => {
+    if (!currentTrack || !isPlaying) return
+
+    const youtubeVideoId = getYouTubeVideoIdFromTrack(currentTrack)
+    const canUseVideo = Boolean(
+      youtubeVideoId ||
+        (currentTrack.source !== "youtube" && hasVideoExtension(currentTrack))
+    )
+    if (!canUseVideo) return
+
+    const url = getBestTrackMediaUrl(currentTrack, "video", streamingQuality)
+    if (!url?.startsWith("/")) return
+
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      fetch(url, {
+        cache: "no-store",
+        headers: { Range: "bytes=0-4095" },
+        signal: controller.signal,
+      }).catch(() => {})
+    }, 700)
+
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [currentTrack?.id, currentTrack?.videoId, currentTrack?.file_path, isPlaying, streamingQuality])
 
   // Media Session API handlers
   useEffect(() => {

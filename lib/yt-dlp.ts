@@ -17,6 +17,13 @@ export interface YtDlpDownloadResult {
   mediaType: YtDownloadMediaType
 }
 
+export interface YtDlpStreamResult {
+  url: string
+  mimeType: string
+  quality: YtDownloadQuality
+  mediaType: YtDownloadMediaType
+}
+
 interface YtDlpDownloadOptions {
   force?: boolean
 }
@@ -167,6 +174,43 @@ export async function downloadYouTubeMedia(
   }
 
   return toDownloadResult(downloadedFile, quality, mediaType)
+}
+
+export async function getYouTubeDirectStream(
+  videoId: string,
+  quality: YtDownloadQuality = "high",
+  mediaType: YtDownloadMediaType = "audio"
+): Promise<YtDlpStreamResult> {
+  if (!isValidYouTubeVideoId(videoId)) {
+    throw new Error("Invalid YouTube video ID")
+  }
+
+  const url = `https://www.youtube.com/watch?v=${videoId}`
+  const format = mediaType === "video" ? VIDEO_FORMATS[quality] : AUDIO_FORMATS[quality]
+  const result = await runYtDlp([
+    "--no-playlist",
+    "--no-progress",
+    "--format",
+    format,
+    "--get-url",
+    url,
+  ])
+
+  const directUrl = result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => /^https?:\/\//i.test(line))
+
+  if (!directUrl) {
+    throw new Error("yt-dlp could not resolve a playable stream URL")
+  }
+
+  return {
+    url: directUrl,
+    mimeType: mediaType === "video" ? "video/mp4" : "audio/webm",
+    quality,
+    mediaType,
+  }
 }
 
 function getDownloadDir(mediaType: YtDownloadMediaType): string {

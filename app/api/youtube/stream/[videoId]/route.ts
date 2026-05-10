@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { queries, YTTrack } from "@/lib/db"
-import { getMediaMimeType } from "@/lib/yt-dlp"
+import {
+  getMediaMimeType,
+  getYouTubeDirectStream,
+  YtDlpUnavailableError,
+  type YtDownloadMediaType,
+  type YtDownloadQuality,
+} from "@/lib/yt-dlp"
 import { isAllowedServedMediaPath } from "@/lib/file-safety"
 import fs from "fs"
 
@@ -31,6 +37,9 @@ const QUALITY_BITRATES: Record<string, number> = {
   high: 256,
 }
 
+const STREAM_QUALITIES = new Set(["low", "normal", "high"])
+const STREAM_MODES = new Set(["audio", "video"])
+
 interface StreamFormat {
   url: string
   bitrate: number
@@ -46,8 +55,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { videoId } = await params
     const range = request.headers.get("Range")
     const { searchParams } = new URL(request.url)
-    const quality = searchParams.get("quality") || "high"
-    const mode = searchParams.get("mode") || "audio"
+    const quality = normalizeQuality(searchParams.get("quality"))
+    const mode = normalizeMode(searchParams.get("mode"))
     const targetBitrate = QUALITY_BITRATES[quality] || 256
 
     const ytTrack = queries.getYTTrackByVideoId?.get(videoId) as YTTrack | null
@@ -62,9 +71,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Get the best stream URL based on mode and quality
-    const stream = mode === "video" 
+    let stream = mode === "video"
       ? await getBestVideoStream(videoId, targetBitrate)
       : await getBestAudioStream(videoId, targetBitrate)
+
+    if (!stream) {
+      stream = await getYtDlpStream(videoId, quality, mode)
+    }
     
     if (!stream) {
       return NextResponse.json(
@@ -116,11 +129,45 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     })
   } catch (error) {
     console.error("[v0] YouTube stream error:", error)
+    if (error instanceof YtDlpUnavailableError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          setup:
+            "Install yt-dlp on the server and restart Melodia. Ubuntu: python3 -m pip install -U yt-dlp or apt install yt-dlp.",
+        },
+        { status: 503 }
+      )
+    }
+
     return NextResponse.json(
       { error: "Failed to stream" }, 
       { status: 500 }
     )
   }
+}
+
+async function getYtDlpStream(
+  videoId: string,
+  quality: YtDownloadQuality,
+  mode: YtDownloadMediaType
+): Promise<StreamFormat | null> {
+  const stream = await getYouTubeDirectStream(videoId, quality, mode)
+  return {
+    url: stream.url,
+    bitrate: QUALITY_BITRATES[quality] || 256,
+    mimeType: stream.mimeType,
+    quality,
+    isVideo: mode === "video",
+  }
+}
+
+function normalizeQuality(value: string | null): YtDownloadQuality {
+  return STREAM_QUALITIES.has(value || "") ? (value as YtDownloadQuality) : "high"
+}
+
+function normalizeMode(value: string | null): YtDownloadMediaType {
+  return STREAM_MODES.has(value || "") ? (value as YtDownloadMediaType) : "audio"
 }
 
 function serveLocalFile(filePath: string, range: string | null): NextResponse {

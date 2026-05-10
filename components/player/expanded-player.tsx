@@ -107,6 +107,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
   const [isVideoFullscreen, setIsVideoFullscreen] = useState(false)
   const [ccEnabled, setCcEnabled] = useState(false)
   const [showVolume, setShowVolume] = useState(false)
+  const [pendingSeekProgress, setPendingSeekProgress] = useState<number | null>(null)
   const previousSidebarCollapsedRef = useRef<boolean | null>(null)
   const subtitleSrc = getSubtitleSource(currentTrack || null)
   const feedbackVideoId = getYouTubeVideoIdFromTrack(currentTrack || null)
@@ -120,15 +121,27 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
   const progress = duration > 0
     ? Math.min(100, Math.max(0, (safeCurrentTime / duration) * 100))
     : 0
+  const displayedProgress = pendingSeekProgress ?? progress
+  const displayedCurrentTime = duration > 0
+    ? (displayedProgress / 100) * duration
+    : safeCurrentTime
   const feedbackTrackId = !feedbackVideoId && Number.isInteger(Number(currentTrack?.id))
     ? Number(currentTrack?.id)
     : null
 
-  const handleSeek = (value: number[]) => {
+  const clampSeekProgress = (value: number[]) => Math.min(100, Math.max(0, value[0] ?? 0))
+
+  const handleSeekPreview = (value: number[]) => {
     if (duration <= 0) return
-    const percent = Math.min(100, Math.max(0, value[0]))
+    setPendingSeekProgress(clampSeekProgress(value))
+  }
+
+  const handleSeekCommit = (value: number[]) => {
+    if (duration <= 0) return
+    const percent = clampSeekProgress(value)
     const nextTime = (percent / 100) * duration
     seekToPlayback(nextTime)
+    setPendingSeekProgress(null)
   }
 
   useEffect(() => {
@@ -389,7 +402,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
 
         {/* Seekable progress bar */}
         <div className="group relative h-1 w-full cursor-pointer bg-white/20 hover:h-2 transition-all">
-          <div className="h-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+          <div className="h-full bg-primary transition-all" style={{ width: `${displayedProgress}%` }} />
         </div>
 
         {/* Bottom controls bar — two rows on mobile, one row on desktop */}
@@ -431,7 +444,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
 
             {/* Timestamp */}
             <span className="whitespace-nowrap text-xs text-white/60 lg:text-sm">
-              {formatTime(safeCurrentTime)} / {formatTime(duration)}
+              {formatTime(displayedCurrentTime)} / {formatTime(duration)}
             </span>
 
             {/* Track info — desktop only, fills remaining space */}
@@ -601,9 +614,16 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
 
             {/* Progress */}
             <div className="w-full max-w-[380px]">
-              <Slider value={[progress]} max={100} step={0.1} onValueChange={handleSeek} className="cursor-pointer" />
+              <Slider
+                value={[displayedProgress]}
+                max={100}
+                step={0.1}
+                onValueChange={handleSeekPreview}
+                onValueCommit={handleSeekCommit}
+                className="cursor-pointer"
+              />
               <div className="mt-1.5 flex justify-between text-xs text-muted-foreground">
-                <span>{formatTime(safeCurrentTime)}</span>
+                <span>{formatTime(displayedCurrentTime)}</span>
                 <span>{formatTime(duration)}</span>
               </div>
             </div>
@@ -757,9 +777,16 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
 
         {/* Progress */}
         <div className="mt-6 px-6">
-          <Slider value={[progress]} max={100} step={0.1} onValueChange={handleSeek} className="cursor-pointer" />
+          <Slider
+            value={[displayedProgress]}
+            max={100}
+            step={0.1}
+            onValueChange={handleSeekPreview}
+            onValueCommit={handleSeekCommit}
+            className="cursor-pointer"
+          />
           <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-            <span>{formatTime(safeCurrentTime)}</span>
+            <span>{formatTime(displayedCurrentTime)}</span>
             <span>{formatTime(duration)}</span>
           </div>
         </div>

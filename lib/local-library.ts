@@ -1,7 +1,8 @@
 import "server-only"
 
 import db, { Track, YTTrack } from "@/lib/db"
-import { detectLibraryContentType, deriveAudioDescriptors, extractMetadata, saveRemoteImageAsWebp } from "@/lib/metadata"
+import { detectLibraryContentType, deriveAudioDescriptors, extractMetadata } from "@/lib/metadata"
+import { saveBestYouTubeThumbnailAsWebp } from "@/lib/youtube-artwork"
 import fs from "fs"
 import path from "path"
 
@@ -45,10 +46,7 @@ export async function promoteYouTubeDownloadToLocalTrack(
   const podcastAuthor = metadata?.podcastAuthor || ytTrack.podcast_author || (contentType === "podcast" ? artist : null)
   const duration = ytTrack.duration ?? metadata?.duration ?? null
   const fileFormat = metadata?.format || path.extname(audioFilePath).slice(1).toUpperCase() || null
-  const localThumbnail =
-    (await saveRemoteImageAsWebp(ytTrack.thumbnail_url, `youtube-${ytTrack.video_id}`).catch(() => null)) ||
-    ytTrack.thumbnail_url ||
-    null
+  const localThumbnail = await saveBestYouTubeThumbnailAsWebp(ytTrack.video_id, [ytTrack.thumbnail_url])
 
   const existingTrack = getTrackByFilePath(filePath)
 

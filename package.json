@@ -12,6 +12,7 @@
     "demo:reset": "node scripts/demo.cjs reset",
     "demo:status": "node scripts/demo.cjs status",
     "demo:verify": "node scripts/demo.cjs verify",
+    "artwork:repair": "node scripts/repair-youtube-artwork.cjs",
     "smoke:api": "node scripts/smoke-api.cjs",
     "lint": "eslint .",
     "check": "corepack pnpm typecheck && corepack pnpm lint && corepack pnpm build && corepack pnpm demo:verify && corepack pnpm smoke:api"

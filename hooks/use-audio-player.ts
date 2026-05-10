@@ -417,8 +417,14 @@ export function useAudioPlayer() {
 
   useEffect(() => {
     return listenForPlaybackSeek((time) => {
-      if (howlRef.current) {
-        howlRef.current.seek(time)
+      const activeHowl = howlRef.current
+      const shouldResume = usePlayerStore.getState().isPlaying
+
+      if (activeHowl) {
+        activeHowl.seek(time)
+        if (shouldResume && !activeHowl.playing()) {
+          activeHowl.play()
+        }
       }
       setCurrentTime(time)
     })
@@ -482,8 +488,12 @@ export function useAudioPlayer() {
       const seekTo = (time: number) => {
         const latest = usePlayerStore.getState()
         const safeTime = Math.max(0, Math.min(time, latest.duration || time))
-        if (howlRef.current) {
-          howlRef.current.seek(safeTime)
+        const activeHowl = howlRef.current
+        if (activeHowl) {
+          activeHowl.seek(safeTime)
+          if (latest.isPlaying && !activeHowl.playing()) {
+            activeHowl.play()
+          }
         }
         latest.setCurrentTime(safeTime)
       }
@@ -530,8 +540,14 @@ export function useAudioPlayer() {
   // Seek function
   const seek = useCallback(
     (time: number) => {
-      if (howlRef.current) {
-        howlRef.current.seek(time)
+      const activeHowl = howlRef.current
+      const shouldResume = usePlayerStore.getState().isPlaying
+
+      if (activeHowl) {
+        activeHowl.seek(time)
+        if (shouldResume && !activeHowl.playing()) {
+          activeHowl.play()
+        }
       }
       setCurrentTime(time)
     },

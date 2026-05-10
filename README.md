@@ -51,6 +51,7 @@ corepack pnpm lint
 corepack pnpm build
 corepack pnpm check
 corepack pnpm smoke:api
+corepack pnpm artwork:repair --dry-run
 ```
 
 ## Environment
@@ -81,6 +82,15 @@ For production VPS use, install yt-dlp and configure cookies if YouTube challeng
 ```bash
 sudo python3 -m pip install -U yt-dlp
 yt-dlp --version
+```
+
+If imported YouTube playlist artwork is missing after a deploy or older imports saved broken `maxresdefault` URLs, repair it on the VPS:
+
+```bash
+cd /var/www/melodia/current
+corepack pnpm artwork:repair --dry-run
+corepack pnpm artwork:repair
+sudo systemctl restart melodia
 ```
 
 ## Playlist Import

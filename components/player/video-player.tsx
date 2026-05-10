@@ -561,8 +561,12 @@ export function VideoPlayer() {
     return listenForPlaybackSeek((time) => {
       const video = videoRef.current
       if (!video || !shouldUseVideoEngine) return
+      const shouldResume = usePlayerStore.getState().isPlaying
       video.currentTime = time
       setCurrentTime(time)
+      if (shouldResume && video.paused) {
+        video.play().catch(reportPlayError)
+      }
     })
   }, [setCurrentTime, shouldUseVideoEngine])
 

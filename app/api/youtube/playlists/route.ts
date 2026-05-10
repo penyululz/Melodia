@@ -3,6 +3,7 @@ import db, { queries, YTPlaylist } from "@/lib/db"
 import { getYTPlaylist, extractPlaylistId, type YTSearchResult } from "@/lib/youtube-music"
 import { authErrorResponse, requireMutationAuth } from "@/lib/auth-policy"
 import { deriveAudioDescriptors, detectLibraryContentType, saveRemoteImageAsWebp } from "@/lib/metadata"
+import { saveBestYouTubeThumbnailAsWebp } from "@/lib/youtube-artwork"
 
 // GET - List all imported YouTube playlists
 export async function GET() {
@@ -78,10 +79,10 @@ export async function POST(request: NextRequest) {
       const track = playlistInfo.tracks[i]
       if (!track.videoId) continue
 
-      const thumbnail =
-        (await saveRemoteImageAsWebp(track.thumbnailUrlHQ || track.thumbnailUrl, `youtube-${track.videoId}`).catch(() => null)) ||
-        track.thumbnailUrlHQ ||
-        track.thumbnailUrl
+      const thumbnail = await saveBestYouTubeThumbnailAsWebp(track.videoId, [
+        track.thumbnailUrl,
+        track.thumbnailUrlHQ,
+      ])
 
       upsertYouTubeTrack(track, thumbnail)
       const localTrack = upsertYouTubeTrackAsLibraryItem(track, thumbnail)

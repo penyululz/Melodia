@@ -3,7 +3,8 @@ import db, { type YTTrack } from "@/lib/db"
 import { getDemoPlaylistTracks } from "@/lib/demo-data"
 import { authErrorResponse, isDemoSessionEnabled, requireMutationAuth } from "@/lib/auth-policy"
 import { isValidYouTubeVideoId } from "@/lib/yt-dlp"
-import { detectLibraryContentType, saveRemoteImageAsWebp } from "@/lib/metadata"
+import { detectLibraryContentType } from "@/lib/metadata"
+import { saveBestYouTubeThumbnailAsWebp } from "@/lib/youtube-artwork"
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -214,10 +215,10 @@ async function addYouTubeTrackToPlaylist(playlistId: string, videoId: string, bo
   const title = getString(body.title) || existingTrack?.title || "Unknown Track"
   const artist = getString(body.artist) || existingTrack?.artist || "Unknown Artist"
   const album = getNullableString(body.album) ?? existingTrack?.album ?? null
-  const remoteThumbnailUrl = getNullableString(body.thumbnailUrlHQ) || getNullableString(body.thumbnailUrl)
-  const thumbnailUrl =
-    (await saveRemoteImageAsWebp(remoteThumbnailUrl, `youtube-${videoId}`).catch(() => null)) ||
-    remoteThumbnailUrl
+  const thumbnailUrl = await saveBestYouTubeThumbnailAsWebp(videoId, [
+    getNullableString(body.thumbnailUrl),
+    getNullableString(body.thumbnailUrlHQ),
+  ])
   const duration = getNullableNumber(body.duration) ?? existingTrack?.duration ?? null
   const resolvedContentType = resolveContentType(body, title, artist, album, existingTrack)
 

@@ -79,18 +79,19 @@ export async function searchYTMusic(query: string, limit = 20): Promise<YTSearch
     const results = await yt.searchSongs(query)
     spendQuota(provider, 1)
 
-    const mapped = results.slice(0, limit).map((song) =>
-      withContentType({
+    const mapped = results.slice(0, limit).map((song) => {
+      const thumbnail = getBestThumbnail((song as any).thumbnails) || getThumbnailWithFallback(song.videoId)
+      return withContentType({
         videoId: song.videoId,
         title: song.name,
         artist: song.artist?.name || "Unknown Artist",
         album: song.album?.name || null,
         duration: song.duration || null,
-        thumbnailUrl: getThumbnailWithFallback(song.videoId),
-        thumbnailUrlHQ: getHQThumbnail(song.videoId),
+        thumbnailUrl: thumbnail,
+        thumbnailUrlHQ: thumbnail,
         type: "song" as const,
       })
-    )
+    })
     setCachedJson(cacheKey, mapped, getSearchCacheTtlSeconds())
     return mapped
   } catch (error) {
@@ -129,7 +130,7 @@ export async function searchYTMusicVideos(query: string, limit = 10): Promise<YT
         album: null,
         duration: video.duration || null,
         thumbnailUrl: thumbnail,
-        thumbnailUrlHQ: getHQThumbnail(video.videoId),
+        thumbnailUrlHQ: thumbnail,
         type: "video" as const,
       })
     })
@@ -182,14 +183,19 @@ export async function searchYouTubeDataApi(query: string, limit = 20): Promise<Y
         const videoId = item?.id?.videoId
         const snippet = item?.snippet
         if (!videoId || !snippet?.title) return null
+        const thumbnail =
+          snippet.thumbnails?.high?.url ||
+          snippet.thumbnails?.medium?.url ||
+          snippet.thumbnails?.default?.url ||
+          getThumbnailWithFallback(videoId)
         return withContentType({
           videoId,
           title: decodeHtml(snippet.title),
           artist: decodeHtml(snippet.channelTitle || "Unknown Artist"),
           album: null,
           duration: null,
-          thumbnailUrl: snippet.thumbnails?.high?.url || getThumbnailWithFallback(videoId),
-          thumbnailUrlHQ: snippet.thumbnails?.maxres?.url || getHQThumbnail(videoId),
+          thumbnailUrl: thumbnail,
+          thumbnailUrlHQ: thumbnail,
           type: "video" as const,
         })
       })
@@ -268,7 +274,7 @@ function toYTPlaylistTrack(track: any): YTSearchResult | null {
     album,
     duration: getDurationSeconds(track.duration || track.durationSeconds || track.lengthSeconds),
     thumbnailUrl: thumbnail || getThumbnailWithFallback(videoId),
-    thumbnailUrlHQ: getHQThumbnail(videoId),
+    thumbnailUrlHQ: thumbnail || getThumbnailWithFallback(videoId),
     type: track.type === "VIDEO" || track.type === "video" ? "video" : "song",
   })
 }
@@ -347,18 +353,19 @@ export async function getYTSuggestions(videoId: string): Promise<YTSearchResult[
     const yt = await getYTMusic()
     const suggestions = await (yt as any).getSuggestions(videoId)
 
-    return (suggestions || []).slice(0, 10).map((song: any) =>
-      withContentType({
+    return (suggestions || []).slice(0, 10).map((song: any) => {
+      const thumbnail = getBestThumbnail(song.thumbnails) || getThumbnailWithFallback(song.videoId)
+      return withContentType({
         videoId: song.videoId,
         title: song.name,
         artist: song.artist?.name || "Unknown Artist",
         album: song.album?.name || null,
         duration: song.duration || null,
-        thumbnailUrl: getThumbnailWithFallback(song.videoId),
-        thumbnailUrlHQ: getHQThumbnail(song.videoId),
+        thumbnailUrl: thumbnail,
+        thumbnailUrlHQ: thumbnail,
         type: "song" as const,
       })
-    )
+    })
   } catch (error) {
     console.error("[v0] YouTube Music suggestions error:", error)
     return []
@@ -375,14 +382,16 @@ export async function getYTSongDetails(videoId: string): Promise<YTSearchResult 
 
     if (!song) return null
 
+    const thumbnail = getBestThumbnail((song as any).thumbnails) || getThumbnailWithFallback(song.videoId)
+
     return withContentType({
       videoId: song.videoId,
       title: song.name,
       artist: song.artist?.name || "Unknown Artist",
       album: (song as any).album?.name || null,
       duration: song.duration || null,
-      thumbnailUrl: getThumbnailWithFallback(song.videoId),
-      thumbnailUrlHQ: getHQThumbnail(song.videoId),
+      thumbnailUrl: thumbnail,
+      thumbnailUrlHQ: thumbnail,
       type: "song" as const,
     })
   } catch (error) {

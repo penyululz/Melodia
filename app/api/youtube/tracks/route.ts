@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import db, { queries, YTTrack } from "@/lib/db"
 import { isValidYouTubeVideoId } from "@/lib/yt-dlp"
 import { authErrorResponse, requireMutationAuth } from "@/lib/auth-policy"
-import { detectLibraryContentType, saveRemoteImageAsWebp } from "@/lib/metadata"
+import { detectLibraryContentType } from "@/lib/metadata"
+import { saveBestYouTubeThumbnailAsWebp } from "@/lib/youtube-artwork"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -68,10 +69,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid YouTube video ID" }, { status: 400 })
     }
 
-    const remoteThumbnail = thumbnailUrlHQ || thumbnailUrl || null
-    const thumbnail =
-      (await saveRemoteImageAsWebp(remoteThumbnail, `youtube-${videoId}`).catch(() => null)) ||
-      remoteThumbnail
+    const thumbnail = await saveBestYouTubeThumbnailAsWebp(videoId, [
+      thumbnailUrl,
+      thumbnailUrlHQ,
+    ])
     const resolvedContentType =
       contentType === "podcast" || contentType === "music"
         ? contentType

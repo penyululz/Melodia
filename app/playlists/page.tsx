@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { PlaylistCard } from '@/components/playlists/playlist-card';
 import { CreatePlaylistModal } from '@/components/playlists/create-playlist-modal';
+import { ImportYouTubePlaylistModal } from '@/components/playlists/import-youtube-playlist-modal';
 
 interface Playlist {
   id: string;
@@ -35,9 +36,12 @@ export default function PlaylistsPage() {
   return (
     <main className="flex-1 overflow-y-auto">
       <div className="p-4 md:p-8">
-        <div className="flex items-center justify-between mb-8">
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-3xl font-bold">Your Playlists</h1>
-          <CreatePlaylistModal onCreated={loadPlaylists} />
+          <div className="flex flex-wrap gap-2">
+            <ImportYouTubePlaylistModal onImported={loadPlaylists} />
+            <CreatePlaylistModal onCreated={loadPlaylists} />
+          </div>
         </div>
 
         {loading ? (

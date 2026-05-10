@@ -3,7 +3,7 @@ import db, { type YTTrack } from "@/lib/db"
 import { getDemoPlaylistTracks } from "@/lib/demo-data"
 import { authErrorResponse, isDemoSessionEnabled, requireMutationAuth } from "@/lib/auth-policy"
 import { isValidYouTubeVideoId } from "@/lib/yt-dlp"
-import { detectLibraryContentType } from "@/lib/metadata"
+import { detectLibraryContentType, saveRemoteImageAsWebp } from "@/lib/metadata"
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -125,7 +125,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     }
 
     if (videoId) {
-      return addYouTubeTrackToPlaylist(id, videoId, body)
+      return await addYouTubeTrackToPlaylist(id, videoId, body)
     }
 
     if (!trackId) {
@@ -201,7 +201,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   }
 }
 
-function addYouTubeTrackToPlaylist(playlistId: string, videoId: string, body: AddTrackBody) {
+async function addYouTubeTrackToPlaylist(playlistId: string, videoId: string, body: AddTrackBody) {
   if (!isValidYouTubeVideoId(videoId)) {
     return NextResponse.json({ error: "Invalid YouTube video ID" }, { status: 400 })
   }
@@ -214,7 +214,10 @@ function addYouTubeTrackToPlaylist(playlistId: string, videoId: string, body: Ad
   const title = getString(body.title) || existingTrack?.title || "Unknown Track"
   const artist = getString(body.artist) || existingTrack?.artist || "Unknown Artist"
   const album = getNullableString(body.album) ?? existingTrack?.album ?? null
-  const thumbnailUrl = getNullableString(body.thumbnailUrlHQ) || getNullableString(body.thumbnailUrl)
+  const remoteThumbnailUrl = getNullableString(body.thumbnailUrlHQ) || getNullableString(body.thumbnailUrl)
+  const thumbnailUrl =
+    (await saveRemoteImageAsWebp(remoteThumbnailUrl, `youtube-${videoId}`).catch(() => null)) ||
+    remoteThumbnailUrl
   const duration = getNullableNumber(body.duration) ?? existingTrack?.duration ?? null
   const resolvedContentType = resolveContentType(body, title, artist, album, existingTrack)
 

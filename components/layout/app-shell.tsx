@@ -19,7 +19,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     // Use dvh (dynamic viewport height) so the shell fills correctly in both
     // portrait and landscape on mobile when the browser chrome resizes
-    <div className="relative flex h-[100dvh] overflow-hidden">
+    <div className="relative flex h-[100dvh] overflow-hidden pt-safe">
       {/* Sidebar — fixed, desktop only */}
       <Sidebar />
 

@@ -101,8 +101,8 @@ export default function HomePage() {
     },
     {
       key: "saved-online-mix",
-      title: "Saved Online Mix",
-      description: "From songs you saved through search",
+      title: mixes.mixLabels?.ytMixTitle ?? "Recommended Online Mix",
+      description: "YouTube Music picks from your taste",
       tracks: mixes.ytMix ?? [],
       gradient: "bg-gradient-to-br from-rose-900 to-red-700",
       icon: <Radio className="h-4 w-4" />,
@@ -254,11 +254,11 @@ export default function HomePage() {
         />
       )}
 
-      {/* Saved online mix row */}
+      {/* Recommended online mix row */}
       {mixes.ytMix?.length > 0 && (
         <MixRow
-          title="Saved Online Mix"
-          subtitle="From songs you saved through search"
+          title={mixes.mixLabels?.ytMixTitle ?? "Recommended Online Mix"}
+          subtitle="Fresh YouTube Music picks based on your artists, searches, mood, and history"
           tracks={mixes.ytMix}
           accentColor="text-red-500"
           icon={<Radio className="h-4 w-4" />}

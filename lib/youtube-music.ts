@@ -99,6 +99,48 @@ export async function searchYTMusic(query: string, limit = 20): Promise<YTSearch
   }
 }
 
+export async function searchYTMusicVideos(query: string, limit = 10): Promise<YTSearchResult[]> {
+  try {
+    const safeLimit = Math.min(Math.max(limit, 1), 20)
+    const cacheKey = makeCacheKey("ytmusic-video-search", [query.trim().toLowerCase(), safeLimit])
+    const cached = getCachedJson<YTSearchResult[]>(cacheKey)
+    if (cached) return cached
+
+    const provider = "ytmusic-web"
+    const dailyBudget = Number.parseInt(process.env.YTMUSIC_WEB_DAILY_REQUEST_BUDGET || "500", 10)
+    const perMinuteBudget = Number.parseInt(process.env.YTMUSIC_WEB_REQUESTS_PER_MINUTE || "20", 10)
+    if (!canSpendRequestBudget(
+      provider,
+      1,
+      Number.isFinite(dailyBudget) ? dailyBudget : 500,
+      Number.isFinite(perMinuteBudget) ? perMinuteBudget : 20
+    )) return []
+
+    const yt = await getYTMusic()
+    const results = await yt.searchVideos(query)
+    spendQuota(provider, 1)
+
+    const mapped = results.slice(0, safeLimit).map((video) => {
+      const thumbnail = video.thumbnails?.[video.thumbnails.length - 1]?.url || getThumbnailWithFallback(video.videoId)
+      return withContentType({
+        videoId: video.videoId,
+        title: video.name,
+        artist: video.artist?.name || "Unknown Artist",
+        album: null,
+        duration: video.duration || null,
+        thumbnailUrl: thumbnail,
+        thumbnailUrlHQ: getHQThumbnail(video.videoId),
+        type: "video" as const,
+      })
+    })
+    setCachedJson(cacheKey, mapped, getSearchCacheTtlSeconds())
+    return mapped
+  } catch (error) {
+    console.error("[v0] YouTube Music video search error:", error)
+    return []
+  }
+}
+
 export async function searchYouTubeDataApi(query: string, limit = 20): Promise<YTSearchResult[]> {
   const apiKey = process.env.YOUTUBE_DATA_API_KEY || process.env.GOOGLE_API_KEY
   if (!apiKey) return []

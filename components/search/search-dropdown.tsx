@@ -27,6 +27,7 @@ interface SearchResult {
   duration?: number
   cover_art_path?: string
   thumbnailUrl?: string
+  type?: "song" | "video" | string
   content_type?: "music" | "podcast" | string | null
   podcast_title?: string | null
   podcast_author?: string | null
@@ -109,6 +110,7 @@ export function SearchDropdown({ query, isOpen, onClose, onSelect }: SearchDropd
               duration: r.duration,
               thumbnailUrl: r.thumbnailUrl,
               cover_art_path: r.thumbnailUrl,
+              type: r.type,
               content_type: r.content_type || "music",
               podcast_title: r.podcast_title || null,
               podcast_author: r.podcast_author || null,
@@ -411,6 +413,7 @@ function toPlayerTrack(result: SearchResult): Track {
     cover_art_path: result.cover_art_path || result.thumbnailUrl || null,
     source: result.source,
     videoId: result.videoId,
+    media_type: result.type,
     content_type: result.content_type || "music",
     podcast_title: result.podcast_title || null,
     podcast_author: result.podcast_author || null,

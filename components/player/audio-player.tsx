@@ -14,14 +14,11 @@ import { ExpandedPlayer } from "./expanded-player"
 import { Button } from "@/components/ui/button"
 import { ChevronUp } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { hasVideoExtension } from "@/lib/format"
-import { getYouTubeVideoIdFromTrack } from "@/lib/offline-media"
 
 export function AudioPlayer() {
   const { currentTrack, isPlaying, setExpandedPlayerOpen } = usePlayerStore()
   const { isCollapsed } = useSidebarStore()
-  const isYouTube = Boolean(getYouTubeVideoIdFromTrack(currentTrack || null))
-  const canPlayVideo = isYouTube || hasVideoExtension(currentTrack || null)
+  const canPlayVideo = Boolean(currentTrack)
   const [isExpanded, setIsExpanded] = useState(false)
 
   useEffect(() => {

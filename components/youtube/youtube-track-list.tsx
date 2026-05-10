@@ -28,6 +28,7 @@ export interface YTTrackResult {
   duration: number | null
   thumbnailUrl: string | null
   thumbnailUrlHQ?: string | null
+  type?: "song" | "video" | string
   content_type?: "music" | "podcast" | string | null
   podcast_title?: string | null
   podcast_author?: string | null
@@ -394,6 +395,7 @@ function toPlayerTrack(track: YTTrackResult): Track {
     id: track.videoId,
     source: "youtube",
     videoId: track.videoId,
+    media_type: track.type,
     title: track.title,
     artist: track.artist,
     album: track.album,

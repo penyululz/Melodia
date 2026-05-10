@@ -8,6 +8,7 @@ export interface Track {
   id: number | string
   source?: "local" | "youtube"
   videoId?: string
+  media_type?: "song" | "video" | string | null
   title: string
   artist: string | null
   album: string | null

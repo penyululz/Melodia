@@ -30,9 +30,7 @@ import {
   Headphones,
   Video,
   MoreVertical,
-  Maximize,
   Minimize,
-  PictureInPicture2,
   Volume2,
   VolumeX,
   Volume1,
@@ -113,6 +111,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
   const isYouTube = Boolean(feedbackVideoId)
   const isLocalVideo = !isYouTube && currentTrack?.source !== "youtube" && hasVideoExtension(currentTrack || null)
   const shouldRenderVideo = playbackMode === "video" && (isYouTube || isLocalVideo)
+  const shouldUseVideoFrame = playbackMode === "video"
   const safeCurrentTime = duration > 0
     ? Math.min(Math.max(currentTime, 0), duration)
     : Math.max(currentTime, 0)
@@ -275,20 +274,6 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
         }).catch(() => {})
       }
     }
-  }
-
-  const requestPictureInPicture = () => {
-    videoRef.current?.requestPictureInPicture?.().catch(() => {})
-  }
-
-  const openVideoFullscreen = () => {
-    const video = videoRef.current
-    if (video?.requestFullscreen) {
-      video.requestFullscreen().catch(() => setIsVideoFullscreen(true))
-      return
-    }
-
-    setIsVideoFullscreen(true)
   }
 
   const renderVideo = (className: string) => (
@@ -530,11 +515,11 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
             <div
               className={cn(
                 "relative w-full overflow-hidden rounded-xl bg-black shadow-2xl",
-                shouldRenderVideo
+                shouldUseVideoFrame
                   ? "aspect-video max-w-[640px] xl:max-w-[760px]"
                   : "aspect-square max-w-[320px] xl:max-w-[380px]"
               )}
-              data-video-dock={shouldRenderVideo ? "expanded-player" : undefined}
+              data-video-dock={shouldUseVideoFrame ? "expanded-player" : undefined}
             >
               {playbackMode === "video" ? (
                 <div className="relative h-full w-full">
@@ -549,26 +534,6 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
                     </>
                   )}
                   {/* Video controls overlay */}
-                  {!shouldRenderVideo && (
-                  <div className="absolute bottom-2 right-2 flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={requestPictureInPicture}
-                      className="h-8 w-8 bg-black/60 text-white hover:bg-black/80"
-                    >
-                      <PictureInPicture2 className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={openVideoFullscreen}
-                      className="h-8 w-8 bg-black/60 text-white hover:bg-black/80"
-                    >
-                      <Maximize className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  )}
                 </div>
               ) : (
                 <Image src={thumbnail} alt={currentTrack.title} fill className="object-cover" priority />
@@ -701,11 +666,11 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
           <div
             className={cn(
               "relative w-full overflow-hidden rounded-xl bg-black shadow-2xl",
-              shouldRenderVideo
+              shouldUseVideoFrame
                 ? "aspect-video max-w-[420px] sm:max-w-[560px]"
                 : "aspect-square max-w-[300px] sm:max-w-[360px]"
             )}
-            data-video-dock={shouldRenderVideo ? "expanded-player" : undefined}
+            data-video-dock={shouldUseVideoFrame ? "expanded-player" : undefined}
           >
             {playbackMode === "video" ? (
               <div className="relative h-full w-full">
@@ -718,19 +683,6 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
                       <span className="rounded bg-black/50 px-2 py-1 text-xs text-white/80">Video Mode</span>
                     </div>
                   </>
-                )}
-                {/* Video expand button */}
-                {!shouldRenderVideo && (
-                <div className="absolute bottom-2 right-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={openVideoFullscreen}
-                    className="h-9 w-9 bg-black/60 text-white hover:bg-black/80"
-                  >
-                    <Maximize className="h-4 w-4" />
-                  </Button>
-                </div>
                 )}
               </div>
             ) : (

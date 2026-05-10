@@ -54,8 +54,11 @@ function getSubtitleSource(
     id?: number | string
     videoId?: string
     file_path?: string
-  } | null
+  } | null,
+  resolvedVideoId?: string | null
 ): string | null {
+  if (resolvedVideoId) return `/api/subtitles/youtube/${encodeURIComponent(resolvedVideoId)}`
+
   const videoId = getYouTubeVideoIdFromTrack(track)
   if (videoId) return `/api/subtitles/youtube/${encodeURIComponent(videoId)}`
 
@@ -122,6 +125,14 @@ function reportPlayError(error: unknown) {
 
 const OFFLINE_VIDEO_FALLBACK_TIMEOUT_MS = 4500
 
+type ResolvedYouTubeVideo = {
+  videoId: string
+  title: string
+  artist: string
+  duration: number | null
+  thumbnailUrl: string | null
+}
+
 async function requestNativeFullscreen(video: HTMLVideoElement): Promise<boolean> {
   try {
     if (video.requestFullscreen) {
@@ -173,11 +184,21 @@ export function VideoPlayer() {
   const [offlineVideoUrl, setOfflineVideoUrl] = useState<string | null>(null)
   const [floatingRect, setFloatingRect] = useState<FloatingRect | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [resolvedYouTubeVideo, setResolvedYouTubeVideo] = useState<ResolvedYouTubeVideo | null>(null)
 
   const youtubeVideoId = getYouTubeVideoIdFromTrack(currentTrack || null)
+  const resolvedYouTubeVideoId = resolvedYouTubeVideo?.videoId || null
+  const effectiveYouTubeVideoId = resolvedYouTubeVideoId || youtubeVideoId
   const isYouTube = Boolean(youtubeVideoId)
   const isLocalVideo = !isYouTube && currentTrack?.source !== "youtube" && hasVideoExtension(currentTrack || null)
-  const canUseVideoTrack = Boolean(currentTrack && (isLocalVideo || isYouTube))
+  const shouldResolveYouTubeVideo = Boolean(
+    currentTrack &&
+      playbackMode === "video" &&
+      !isLocalVideo &&
+      (currentTrack.title || currentTrack.artist) &&
+      (!isYouTube || currentTrack.media_type !== "video")
+  )
+  const canUseVideoTrack = Boolean(currentTrack && (isLocalVideo || effectiveYouTubeVideoId))
   const isVideoToAudioHandoff =
     previousPlaybackMode === "video" &&
     playbackMode === "audio" &&
@@ -187,15 +208,17 @@ export function VideoPlayer() {
       canUseVideoTrack &&
       (playbackMode === "video" || audioHandoffActive || isVideoToAudioHandoff)
   )
-  const subtitleSrc = getSubtitleSource(currentTrack || null)
+  const subtitleSrc = getSubtitleSource(currentTrack || null, resolvedYouTubeVideoId)
   const shouldShowVideo = Boolean(
     playbackMode === "video" &&
       isVisible &&
       currentTrack &&
-      (isYouTube || isLocalVideo)
+      (effectiveYouTubeVideoId || isLocalVideo)
   )
   const isFloatingPicture = shouldShowVideo && !isExpandedPlayerOpen && !isExpanded
-  const streamingVideoSrc = currentTrack
+  const streamingVideoSrc = effectiveYouTubeVideoId
+    ? `/api/youtube/stream/${effectiveYouTubeVideoId}?mode=video&quality=${streamingQuality}`
+    : currentTrack
     ? getBestTrackMediaUrl(currentTrack, "video", streamingQuality)
     : ""
   const videoSrc = offlineVideoUrl || streamingVideoSrc
@@ -273,6 +296,49 @@ export function VideoPlayer() {
     })
   }, [applyVideoVolume, shouldUseVideoEngine, syncVideoToPlayerTime, tryOfflineVideoFallback])
 
+  useEffect(() => {
+    setResolvedYouTubeVideo(null)
+
+    if (!shouldResolveYouTubeVideo || !currentTrack) return
+    const title = currentTrack.title?.trim()
+    const artist = currentTrack.artist?.trim() || ""
+    if (!title && !artist) return
+
+    const controller = new AbortController()
+    const params = new URLSearchParams({
+      title: title || "",
+      artist,
+    })
+    if (currentTrack.album) params.set("album", currentTrack.album)
+    if (currentTrack.duration) params.set("duration", String(currentTrack.duration))
+
+    fetch(`/api/youtube/resolve-video?${params.toString()}`, {
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (controller.signal.aborted || !data?.video?.videoId) return
+        setResolvedYouTubeVideo(data.video)
+      })
+      .catch((error) => {
+        if ((error as DOMException)?.name !== "AbortError") {
+          console.warn("[video-player] Could not resolve YouTube video:", error)
+        }
+      })
+
+    return () => controller.abort()
+  }, [
+    currentTrack?.id,
+    currentTrack?.title,
+    currentTrack?.artist,
+    currentTrack?.album,
+    currentTrack?.duration,
+    currentTrack?.media_type,
+    playbackMode,
+    shouldResolveYouTubeVideo,
+    isLocalVideo,
+  ])
+
   const updateDockRect = useCallback(() => {
     if (!isExpandedPlayerOpen || !shouldShowVideo) {
       setDockRect(null)
@@ -290,11 +356,11 @@ export function VideoPlayer() {
   }, [isExpandedPlayerOpen, shouldShowVideo])
 
   useEffect(() => {
-    if (playbackMode === "video" && (isYouTube || isLocalVideo) && (currentTrack?.videoId || currentTrack?.file_path)) {
+    if (playbackMode === "video" && (effectiveYouTubeVideoId || isLocalVideo) && (currentTrack?.videoId || currentTrack?.file_path || effectiveYouTubeVideoId)) {
       setIsVisible(true)
       if (knownDuration > 0) setDuration(knownDuration)
     }
-  }, [playbackMode, isYouTube, isLocalVideo, currentTrack?.id, currentTrack?.videoId, currentTrack?.file_path, knownDuration, setDuration])
+  }, [playbackMode, effectiveYouTubeVideoId, isLocalVideo, currentTrack?.id, currentTrack?.videoId, currentTrack?.file_path, knownDuration, setDuration])
 
   useEffect(() => {
     if (previousPlaybackMode === "video" && playbackMode === "audio" && canUseVideoTrack) {
@@ -408,7 +474,7 @@ export function VideoPlayer() {
       window.removeEventListener("resize", updateDockRect)
       window.removeEventListener("scroll", updateDockRect, true)
     }
-  }, [updateDockRect, isExpandedPlayerOpen, shouldShowVideo, currentTrack?.id, currentTrack?.videoId, playbackMode])
+  }, [updateDockRect, isExpandedPlayerOpen, shouldShowVideo, currentTrack?.id, currentTrack?.videoId, resolvedYouTubeVideoId, playbackMode])
 
   useEffect(() => {
     const video = videoRef.current
@@ -509,7 +575,7 @@ export function VideoPlayer() {
     return () => window.removeEventListener("resize", handleResize)
   }, [floatingRect])
 
-  if (!shouldUseVideoEngine || (!currentTrack?.videoId && !currentTrack?.file_path)) return null
+  if (!currentTrack || !shouldUseVideoEngine || (!effectiveYouTubeVideoId && !currentTrack.file_path)) return null
 
   const floatingStyle: CSSProperties | undefined = isFloatingPicture && floatingRect && !isExpanded
     ? {
@@ -604,9 +670,9 @@ export function VideoPlayer() {
   }
 
   const recordPlay = () => {
-    const playKey = currentTrack?.source === "youtube"
+    const playKey = currentTrack.source === "youtube"
       ? `youtube:${currentTrack.videoId}`
-      : `local:${currentTrack?.id}`
+      : `local:${currentTrack.id}`
 
     setIsPlaying(true)
 

@@ -213,6 +213,18 @@ function getPlaylistPicks(
       FROM playlist_youtube_tracks pt
       JOIN yt_tracks y ON y.id = pt.yt_track_id
       GROUP BY y.video_id
+
+      UNION ALL
+
+      SELECT
+        'youtube' as source,
+        NULL as track_id,
+        y.video_id,
+        COUNT(*) as playlist_count,
+        MAX(pt.added_at) as last_added_at
+      FROM yt_playlist_tracks pt
+      JOIN yt_tracks y ON y.id = pt.yt_track_id
+      GROUP BY y.video_id
     )
   `).all() as {
     source: "local" | "youtube"
@@ -325,9 +337,14 @@ function getSimilarTracks(
       score: similarityScore(seed, {
         id: String(track.id),
         source: "local",
+        title: track.title,
         artist: track.artist,
         album: track.album,
         genre: track.genre,
+        mood: getTrackMood(track),
+        style: getTrackStyle(track),
+        language: getTrackLanguage(track),
+        tempoBucket: getTempoBucket(getTrackTempo(track)),
       }) + scoreLocalTrack(track, profile, "discover") * 0.2,
     }))
 
@@ -338,9 +355,14 @@ function getSimilarTracks(
       score: similarityScore(seed, {
         id: track.video_id,
         source: "youtube",
+        title: track.title,
         artist: track.artist,
         album: track.album,
         genre: null,
+        mood: null,
+        style: "online-video",
+        language: null,
+        tempoBucket: null,
       }) + scoreYouTubeTrack(track, profile) * 0.2,
     }))
 
@@ -363,25 +385,35 @@ function pickSeed(
 ) {
   const listened = listenAgain[0]
   if (listened) {
+    const source = listened.source || "local"
     return {
       id: String(listened.id),
-      source: listened.source || "local",
+      source,
       title: listened.title,
       artist: listened.artist,
       album: listened.album,
       genre: "genre" in listened ? listened.genre : null,
+      mood: source === "youtube" ? null : getTrackMood(listened as Track),
+      style: source === "youtube" ? "online-video" : getTrackStyle(listened as Track),
+      language: source === "youtube" ? null : getTrackLanguage(listened as Track),
+      tempoBucket: source === "youtube" ? null : getTempoBucket(getTrackTempo(listened as Track)),
     }
   }
 
   const playlistPick = playlistPicks[0]
   if (playlistPick) {
+    const source = playlistPick.source || "local"
     return {
       id: String(playlistPick.id),
-      source: playlistPick.source || "local",
+      source,
       title: playlistPick.title,
       artist: playlistPick.artist,
       album: playlistPick.album,
       genre: "genre" in playlistPick ? playlistPick.genre : null,
+      mood: source === "youtube" ? null : getTrackMood(playlistPick as Track),
+      style: source === "youtube" ? "online-video" : getTrackStyle(playlistPick as Track),
+      language: source === "youtube" ? null : getTrackLanguage(playlistPick as Track),
+      tempoBucket: source === "youtube" ? null : getTempoBucket(getTrackTempo(playlistPick as Track)),
     }
   }
 
@@ -394,6 +426,10 @@ function pickSeed(
       artist: favoriteLocal.artist,
       album: favoriteLocal.album,
       genre: favoriteLocal.genre,
+      mood: getTrackMood(favoriteLocal),
+      style: getTrackStyle(favoriteLocal),
+      language: getTrackLanguage(favoriteLocal),
+      tempoBucket: getTempoBucket(getTrackTempo(favoriteLocal)),
     }
   }
 
@@ -406,6 +442,10 @@ function pickSeed(
       artist: favoriteYouTube.artist,
       album: favoriteYouTube.album,
       genre: null,
+      mood: null,
+      style: "online-video",
+      language: null,
+      tempoBucket: null,
     }
   }
 
@@ -418,6 +458,10 @@ function pickSeed(
       artist: topLocal.artist,
       album: topLocal.album,
       genre: topLocal.genre,
+      mood: getTrackMood(topLocal),
+      style: getTrackStyle(topLocal),
+      language: getTrackLanguage(topLocal),
+      tempoBucket: getTempoBucket(getTrackTempo(topLocal)),
     }
   }
 
@@ -430,6 +474,10 @@ function pickSeed(
       artist: topYouTube.artist,
       album: topYouTube.album,
       genre: null,
+      mood: null,
+      style: "online-video",
+      language: null,
+      tempoBucket: null,
     }
   }
 
@@ -437,8 +485,8 @@ function pickSeed(
 }
 
 function similarityScore(
-  seed: { id: string; source: string; artist: string | null; album: string | null; genre: string | null },
-  candidate: { id: string; source: string; artist: string | null; album: string | null; genre: string | null }
+  seed: SimilarityItem,
+  candidate: SimilarityItem
 ): number {
   if (seed.source === candidate.source && seed.id === candidate.id) return 0
 
@@ -446,8 +494,26 @@ function similarityScore(
   if (sameValue(seed.artist, candidate.artist)) score += 60
   if (sameValue(seed.album, candidate.album)) score += 28
   if (sameValue(seed.genre, candidate.genre)) score += 34
+  if (sameValue(seed.mood, candidate.mood)) score += 24
+  if (sameValue(seed.style, candidate.style)) score += 18
+  if (sameValue(seed.language, candidate.language)) score += 10
+  if (seed.tempoBucket && seed.tempoBucket === candidate.tempoBucket) score += 8
+  score += tokenOverlap(seed.title, candidate.title) * 4
   if (seed.source === "youtube" && candidate.source === "youtube") score += 8
   return score
+}
+
+type SimilarityItem = {
+  id: string
+  source: string
+  title: string | null
+  artist: string | null
+  album: string | null
+  genre: string | null
+  mood: string | null
+  style: string | null
+  language: string | null
+  tempoBucket: string | null
 }
 
 function recencyScore(date: string | null | undefined): number {
@@ -467,6 +533,50 @@ function sameValue(a: string | null | undefined, b: string | null | undefined): 
   const left = normalized(a)
   const right = normalized(b)
   return Boolean(left && right && left === right)
+}
+
+function tokenOverlap(a: string | null | undefined, b: string | null | undefined): number {
+  const left = new Set(tokenize(a))
+  if (left.size === 0) return 0
+  return tokenize(b).reduce((score, token) => score + (left.has(token) ? 1 : 0), 0)
+}
+
+function tokenize(value: string | null | undefined): string[] {
+  return Array.from(
+    new Set(
+      (value || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
+        .split(/\s+/)
+        .filter((token) => token.length >= 3)
+        .slice(0, 12)
+    )
+  )
+}
+
+function getTrackMood(track: Track): string | null {
+  return (track as Track & { mood?: string | null }).mood || null
+}
+
+function getTrackStyle(track: Track): string | null {
+  return (track as Track & { style?: string | null }).style || track.genre || null
+}
+
+function getTrackLanguage(track: Track): string | null {
+  return (track as Track & { language?: string | null }).language || null
+}
+
+function getTrackTempo(track: Track): number | null {
+  const tempo = Number((track as Track & { tempo?: number | null }).tempo)
+  return Number.isFinite(tempo) && tempo > 0 ? tempo : null
+}
+
+function getTempoBucket(tempo: number | null): string | null {
+  if (!tempo) return null
+  if (tempo < 90) return "slow"
+  if (tempo < 120) return "mid"
+  if (tempo < 145) return "upbeat"
+  return "fast"
 }
 
 function normalized(value: string | null | undefined): string | null {

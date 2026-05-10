@@ -15,6 +15,8 @@ type Signal = {
   similarUserScore: number
   playlistCoScore: number
   contextScore: number
+  libraryScore: number
+  metadataScore: number
 }
 
 type Affinity = {
@@ -62,6 +64,8 @@ const EMPTY_SIGNAL: Signal = {
   similarUserScore: 0,
   playlistCoScore: 0,
   contextScore: 0,
+  libraryScore: 0,
+  metadataScore: 0,
 }
 
 export function buildTasteProfile(
@@ -87,6 +91,10 @@ export function buildTasteProfile(
   addYouTubePlaylistSignals(ytSignals)
   addSearchSignals(localSignals, localTracks, searchTerms)
   addYouTubeSearchSignals(ytSignals, ytTracks, searchTerms)
+  addLibraryMetadataSignals(localSignals, ytSignals, localTracks, ytTracks)
+  bridgePromotedYouTubeSignals(localSignals, ytSignals, localTracks)
+  addPlaylistCoOccurrenceSignals(localSignals, ytSignals)
+  bridgePromotedYouTubeSignals(localSignals, ytSignals, localTracks)
 
   const affinity = buildAffinity(localTracks, ytTracks, localSignals, ytSignals)
 
@@ -136,6 +144,7 @@ export function scoreLocalTrack(
     (track.is_favorite ? 36 : 0) +
     signal.playlistCount * 7 +
     signal.searchScore * 3
+  const libraryScore = signal.libraryScore * 2 + signal.metadataScore * 2.4
 
   const similarityScore =
     affinityScore +
@@ -149,6 +158,7 @@ export function scoreLocalTrack(
     return (
       similarityScore * 1.4 +
       signal.searchScore * 4 +
+      libraryScore +
       contextScore +
       freshnessScore -
       signal.historyCount * 8 -
@@ -159,10 +169,10 @@ export function scoreLocalTrack(
   }
 
   if (mode === "recent") {
-    return freshnessScore * 2 + similarityScore * 0.8 + directScore * 0.45 + contextScore
+    return freshnessScore * 2 + similarityScore * 0.8 + directScore * 0.45 + contextScore + libraryScore
   }
 
-  return directScore + similarityScore + contextScore + freshnessScore
+  return directScore + similarityScore + contextScore + freshnessScore + libraryScore
 }
 
 export function scoreYouTubeTrack(track: YTTrack, profile: TasteProfile): number {
@@ -193,6 +203,8 @@ export function scoreYouTubeTrack(track: YTTrack, profile: TasteProfile): number
     signal.similarUserScore * 10 +
     signal.playlistCoScore * 7 +
     signal.contextScore * 6 +
+    signal.libraryScore * 2 +
+    signal.metadataScore * 2.4 +
     affinityScore +
     freshnessBoost(track.created_at)
   )
@@ -473,6 +485,125 @@ function addYouTubeSearchSignals(
   }
 }
 
+function addLibraryMetadataSignals(
+  localSignals: Map<number, Signal>,
+  ytSignals: Map<string, Signal>,
+  localTracks: Track[],
+  ytTracks: YTTrack[]
+) {
+  for (const track of localTracks) {
+    const metadataScore = metadataCompletenessScore([
+      track.title,
+      track.artist,
+      track.album,
+      track.genre,
+      getTrackMood(track),
+      getTrackStyle(track),
+      getTrackLanguage(track),
+      getTrackTempo(track) ? String(getTrackTempo(track)) : null,
+    ])
+    updateSignal(localSignals, track.id, {
+      libraryScore: 1 + (track.file_path ? 0.5 : 0) + (track.cover_art_path ? 0.35 : 0),
+      metadataScore,
+    })
+  }
+
+  for (const track of ytTracks) {
+    const metadataScore = metadataCompletenessScore([
+      track.title,
+      track.artist,
+      track.album,
+      track.thumbnail_url,
+    ])
+    updateSignal(ytSignals, track.video_id, {
+      libraryScore: 1 + (track.cached_file_path ? 0.8 : 0) + (track.is_cached ? 0.5 : 0),
+      metadataScore,
+    })
+  }
+}
+
+function bridgePromotedYouTubeSignals(
+  localSignals: Map<number, Signal>,
+  ytSignals: Map<string, Signal>,
+  localTracks: Track[]
+) {
+  for (const track of localTracks) {
+    const videoId = getPromotedYouTubeVideoId(track.file_path)
+    if (!videoId) continue
+
+    const localSignal = getSignal(localSignals, track.id)
+    const ytSignal = getSignal(ytSignals, videoId)
+    const merged = mergeIdentitySignals(localSignal, ytSignal)
+    updateSignal(localSignals, track.id, merged)
+    updateSignal(ytSignals, videoId, merged)
+  }
+}
+
+function addPlaylistCoOccurrenceSignals(
+  localSignals: Map<number, Signal>,
+  ytSignals: Map<string, Signal>
+) {
+  const seedTrackIds = getSeedIds(localSignals).slice(0, 120)
+  const seedVideoIds = getSeedIds(ytSignals).slice(0, 120)
+
+  if (seedTrackIds.length > 0) {
+    const placeholders = seedTrackIds.map(() => "?").join(",")
+
+    addLocalPlaylistCoScores(db.prepare(`
+      SELECT other.track_id, COUNT(*) as score
+      FROM playlist_tracks seed
+      JOIN playlist_tracks other ON other.playlist_id = seed.playlist_id
+      WHERE seed.track_id IN (${placeholders})
+        AND other.track_id NOT IN (${placeholders})
+      GROUP BY other.track_id
+    `).all(...seedTrackIds, ...seedTrackIds) as { track_id: number; score: number }[], localSignals)
+
+    addYouTubePlaylistCoScores(db.prepare(`
+      SELECT other_track.video_id, COUNT(*) as score
+      FROM playlist_tracks seed
+      JOIN playlist_youtube_tracks other ON other.playlist_id = seed.playlist_id
+      JOIN yt_tracks other_track ON other_track.id = other.yt_track_id
+      WHERE seed.track_id IN (${placeholders})
+      GROUP BY other_track.video_id
+    `).all(...seedTrackIds) as { video_id: string; score: number }[], ytSignals)
+  }
+
+  if (seedVideoIds.length > 0) {
+    const placeholders = seedVideoIds.map(() => "?").join(",")
+
+    addLocalPlaylistCoScores(db.prepare(`
+      SELECT other.track_id, COUNT(*) as score
+      FROM playlist_youtube_tracks seed
+      JOIN yt_tracks seed_track ON seed_track.id = seed.yt_track_id
+      JOIN playlist_tracks other ON other.playlist_id = seed.playlist_id
+      WHERE seed_track.video_id IN (${placeholders})
+      GROUP BY other.track_id
+    `).all(...seedVideoIds) as { track_id: number; score: number }[], localSignals)
+
+    addYouTubePlaylistCoScores(db.prepare(`
+      SELECT other_track.video_id, COUNT(*) as score
+      FROM playlist_youtube_tracks seed
+      JOIN yt_tracks seed_track ON seed_track.id = seed.yt_track_id
+      JOIN playlist_youtube_tracks other ON other.playlist_id = seed.playlist_id
+      JOIN yt_tracks other_track ON other_track.id = other.yt_track_id
+      WHERE seed_track.video_id IN (${placeholders})
+        AND other_track.video_id NOT IN (${placeholders})
+      GROUP BY other_track.video_id
+    `).all(...seedVideoIds, ...seedVideoIds) as { video_id: string; score: number }[], ytSignals)
+
+    addYouTubePlaylistCoScores(db.prepare(`
+      SELECT other_track.video_id, COUNT(*) as score
+      FROM yt_playlist_tracks seed
+      JOIN yt_tracks seed_track ON seed_track.id = seed.yt_track_id
+      JOIN yt_playlist_tracks other ON other.yt_playlist_id = seed.yt_playlist_id
+      JOIN yt_tracks other_track ON other_track.id = other.yt_track_id
+      WHERE seed_track.video_id IN (${placeholders})
+        AND other_track.video_id NOT IN (${placeholders})
+      GROUP BY other_track.video_id
+    `).all(...seedVideoIds, ...seedVideoIds) as { video_id: string; score: number }[], ytSignals)
+  }
+}
+
 function addSimilarUserSignals(
   localSignals: Map<number, Signal>,
   ytSignals: Map<string, Signal>,
@@ -709,6 +840,9 @@ function getTasteWeight(signal: Signal, playCount: number, favorite: number): nu
     playCount +
     signal.searchScore * 1.5 +
     signal.playlistCount * 4 +
+    signal.playlistCoScore * 1.2 +
+    signal.libraryScore * 0.6 +
+    signal.metadataScore * 0.8 +
     (signal.liked ? 14 : 0) +
     (favorite ? 16 : 0)
   )
@@ -774,6 +908,96 @@ function scoreSearchMatch(text: string, terms: Map<string, number>): number {
     if (tokens.has(term) || text.toLowerCase().includes(term)) score += weight
   }
   return score
+}
+
+function metadataCompletenessScore(values: Array<string | null | undefined>): number {
+  return values.reduce((score, value) => score + (isUsefulMetadataValue(value) ? 1 : 0), 0)
+}
+
+function isUsefulMetadataValue(value: string | number | null | undefined): boolean {
+  if (value === null || value === undefined) return false
+  const text = String(value).trim().toLowerCase()
+  return Boolean(
+    text &&
+      text !== "unknown" &&
+      text !== "unknown artist" &&
+      text !== "unknown album" &&
+      text !== "youtube imports" &&
+      text !== "youtube downloads"
+  )
+}
+
+function getPromotedYouTubeVideoId(filePath: string | null | undefined): string | null {
+  const match = filePath?.match(/\/api\/youtube\/stream\/([^/?#]+)/)
+  return match?.[1] || null
+}
+
+function mergeIdentitySignals(a: Signal, b: Signal): Partial<Signal> {
+  return {
+    historyCount: Math.max(a.historyCount, b.historyCount),
+    completedCount: Math.max(a.completedCount, b.completedCount),
+    skippedCount: Math.max(a.skippedCount, b.skippedCount),
+    avgProgress: Math.max(a.avgProgress, b.avgProgress),
+    liked: a.liked || b.liked,
+    disliked: a.disliked || b.disliked,
+    playlistCount: Math.max(a.playlistCount, b.playlistCount),
+    searchScore: Math.max(a.searchScore, b.searchScore),
+    similarUserScore: Math.max(a.similarUserScore, b.similarUserScore),
+    playlistCoScore: Math.max(a.playlistCoScore, b.playlistCoScore),
+    contextScore: Math.max(a.contextScore, b.contextScore),
+    libraryScore: Math.max(a.libraryScore, b.libraryScore),
+    metadataScore: Math.max(a.metadataScore, b.metadataScore),
+  }
+}
+
+function getSeedIds<T extends number | string>(signals: Map<T, Signal>): T[] {
+  return [...signals.entries()]
+    .filter(([, signal]) =>
+      !signal.disliked &&
+      (signal.historyCount > 0 ||
+        signal.liked ||
+        signal.playlistCount > 0 ||
+        signal.searchScore > 0 ||
+        signal.metadataScore >= 3)
+    )
+    .sort((a, b) => getSeedSignalScore(b[1]) - getSeedSignalScore(a[1]))
+    .map(([id]) => id)
+}
+
+function getSeedSignalScore(signal: Signal): number {
+  return (
+    signal.historyCount * 8 +
+    signal.completedCount * 4 +
+    signal.playlistCount * 7 +
+    signal.searchScore * 3 +
+    signal.metadataScore * 0.8 +
+    (signal.liked ? 30 : 0) -
+    signal.skippedCount * 8
+  )
+}
+
+function addLocalPlaylistCoScores(rows: { track_id: number; score: number }[], signals: Map<number, Signal>) {
+  for (const row of rows) {
+    addSignalValue(signals, row.track_id, "playlistCoScore", Number(row.score || 0))
+  }
+}
+
+function addYouTubePlaylistCoScores(rows: { video_id: string; score: number }[], signals: Map<string, Signal>) {
+  for (const row of rows) {
+    addSignalValue(signals, row.video_id, "playlistCoScore", Number(row.score || 0))
+  }
+}
+
+function addSignalValue<T extends number | string, K extends keyof Signal>(
+  signals: Map<T, Signal>,
+  id: T,
+  key: K,
+  amount: Signal[K] extends number ? number : never
+) {
+  const current = getSignal(signals, id)
+  updateSignal(signals, id, {
+    [key]: Number(current[key] || 0) + amount,
+  } as Partial<Signal>)
 }
 
 function getLocalSignal(profile: TasteProfile, id: number): Signal {

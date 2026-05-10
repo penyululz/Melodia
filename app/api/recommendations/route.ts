@@ -125,7 +125,7 @@ function getRelatedRecommendations(
   if (!seed) return []
 
   const localPlaylistScores = getLocalPlaylistCoScores(seedLocal?.id ?? null, seed.videoId)
-  const youtubePlaylistScores = getYouTubePlaylistCoScores(seed.videoId)
+  const youtubePlaylistScores = getYouTubePlaylistCoScores(seed.videoId, seedLocal?.id ?? null)
 
   const local = localTracks
     .filter((track) => (track.content_type || "music") !== "podcast")
@@ -193,51 +193,85 @@ function getLocalPlaylistCoScores(seedTrackId: number | null, seedVideoId: strin
     for (const row of rows) seedTrackIds.add(row.id)
   }
 
-  if (seedTrackIds.size === 0) return scores
+  if (seedTrackIds.size > 0) {
+    const placeholders = [...seedTrackIds].map(() => "?").join(",")
+    const rows = db.prepare(`
+      SELECT other.track_id, COUNT(*) as score
+      FROM playlist_tracks seed
+      JOIN playlist_tracks other ON other.playlist_id = seed.playlist_id
+      WHERE seed.track_id IN (${placeholders})
+        AND other.track_id NOT IN (${placeholders})
+      GROUP BY other.track_id
+    `).all(...seedTrackIds, ...seedTrackIds) as { track_id: number; score: number }[]
 
-  const placeholders = [...seedTrackIds].map(() => "?").join(",")
-  const rows = db.prepare(`
-    SELECT other.track_id, COUNT(*) as score
-    FROM playlist_tracks seed
-    JOIN playlist_tracks other ON other.playlist_id = seed.playlist_id
-    WHERE seed.track_id IN (${placeholders})
-      AND other.track_id NOT IN (${placeholders})
-    GROUP BY other.track_id
-  `).all(...seedTrackIds, ...seedTrackIds) as { track_id: number; score: number }[]
+    for (const row of rows) scores.set(row.track_id, Number(row.score || 0))
+  }
 
-  for (const row of rows) scores.set(row.track_id, Number(row.score || 0))
+  if (seedVideoId) {
+    const crossRows = db.prepare(`
+      SELECT other.track_id, COUNT(*) as score
+      FROM playlist_youtube_tracks seed
+      JOIN yt_tracks seed_track ON seed_track.id = seed.yt_track_id
+      JOIN playlist_tracks other ON other.playlist_id = seed.playlist_id
+      WHERE seed_track.video_id = ?
+      GROUP BY other.track_id
+    `).all(seedVideoId) as { track_id: number; score: number }[]
+
+    for (const row of crossRows) {
+      scores.set(row.track_id, (scores.get(row.track_id) || 0) + Number(row.score || 0))
+    }
+  }
+
   return scores
 }
 
-function getYouTubePlaylistCoScores(seedVideoId: string | null) {
+function getYouTubePlaylistCoScores(seedVideoId: string | null, seedTrackId: number | null) {
   const scores = new Map<string, number>()
-  if (!seedVideoId) return scores
+  if (!seedVideoId && !seedTrackId) return scores
 
-  const savedPlaylistRows = db.prepare(`
-    SELECT other_track.video_id, COUNT(*) as score
-    FROM playlist_youtube_tracks seed
-    JOIN yt_tracks seed_track ON seed_track.id = seed.yt_track_id
-    JOIN playlist_youtube_tracks other ON other.playlist_id = seed.playlist_id
-    JOIN yt_tracks other_track ON other_track.id = other.yt_track_id
-    WHERE seed_track.video_id = ?
-      AND other_track.video_id != ?
-    GROUP BY other_track.video_id
-  `).all(seedVideoId, seedVideoId) as { video_id: string; score: number }[]
+  if (seedVideoId) {
+    const savedPlaylistRows = db.prepare(`
+      SELECT other_track.video_id, COUNT(*) as score
+      FROM playlist_youtube_tracks seed
+      JOIN yt_tracks seed_track ON seed_track.id = seed.yt_track_id
+      JOIN playlist_youtube_tracks other ON other.playlist_id = seed.playlist_id
+      JOIN yt_tracks other_track ON other_track.id = other.yt_track_id
+      WHERE seed_track.video_id = ?
+        AND other_track.video_id != ?
+      GROUP BY other_track.video_id
+    `).all(seedVideoId, seedVideoId) as { video_id: string; score: number }[]
 
-  const importedPlaylistRows = db.prepare(`
-    SELECT other_track.video_id, COUNT(*) as score
-    FROM yt_playlist_tracks seed
-    JOIN yt_tracks seed_track ON seed_track.id = seed.yt_track_id
-    JOIN yt_playlist_tracks other ON other.yt_playlist_id = seed.yt_playlist_id
-    JOIN yt_tracks other_track ON other_track.id = other.yt_track_id
-    WHERE seed_track.video_id = ?
-      AND other_track.video_id != ?
-    GROUP BY other_track.video_id
-  `).all(seedVideoId, seedVideoId) as { video_id: string; score: number }[]
+    const importedPlaylistRows = db.prepare(`
+      SELECT other_track.video_id, COUNT(*) as score
+      FROM yt_playlist_tracks seed
+      JOIN yt_tracks seed_track ON seed_track.id = seed.yt_track_id
+      JOIN yt_playlist_tracks other ON other.yt_playlist_id = seed.yt_playlist_id
+      JOIN yt_tracks other_track ON other_track.id = other.yt_track_id
+      WHERE seed_track.video_id = ?
+        AND other_track.video_id != ?
+      GROUP BY other_track.video_id
+    `).all(seedVideoId, seedVideoId) as { video_id: string; score: number }[]
 
-  for (const row of [...savedPlaylistRows, ...importedPlaylistRows]) {
-    scores.set(row.video_id, (scores.get(row.video_id) || 0) + Number(row.score || 0))
+    for (const row of [...savedPlaylistRows, ...importedPlaylistRows]) {
+      scores.set(row.video_id, (scores.get(row.video_id) || 0) + Number(row.score || 0))
+    }
   }
+
+  if (seedTrackId) {
+    const crossRows = db.prepare(`
+      SELECT other_track.video_id, COUNT(*) as score
+      FROM playlist_tracks seed
+      JOIN playlist_youtube_tracks other ON other.playlist_id = seed.playlist_id
+      JOIN yt_tracks other_track ON other_track.id = other.yt_track_id
+      WHERE seed.track_id = ?
+      GROUP BY other_track.video_id
+    `).all(seedTrackId) as { video_id: string; score: number }[]
+
+    for (const row of crossRows) {
+      scores.set(row.video_id, (scores.get(row.video_id) || 0) + Number(row.score || 0))
+    }
+  }
+
   return scores
 }
 

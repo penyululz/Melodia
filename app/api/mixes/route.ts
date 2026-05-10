@@ -54,43 +54,66 @@ export async function GET(request: NextRequest) {
     const playableYouTubeTracks = musicYouTubeTracks.filter((track) => !isDislikedYouTube(track.video_id, profile))
 
     const playlistSeeds = getPlaylistSeedLocalTracks(playableLocalTracks, profile)
-    const yourMix = uniqueLocalTracks([
-      ...playlistSeeds,
-      ...sortLocalTracks(playableLocalTracks, profile, "direct"),
-    ])
-    const discoverMix = sortLocalTracks(playableLocalTracks, profile, "discover")
-    const newReleaseMix = sortLocalTracks(
+    const playlistYouTubeSeeds = getPlaylistSeedYouTubeTracks(playableYouTubeTracks, profile)
+    const directLocalMix = sortLocalTracks(playableLocalTracks, profile, "direct")
+    const discoverLocalMix = sortLocalTracks(playableLocalTracks, profile, "discover")
+    const newReleaseLocalMix = sortLocalTracks(
       [...playableLocalTracks].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 30),
       profile,
       "recent"
     )
+    const savedYouTubeMix = sortYouTubeTracks(playableYouTubeTracks, profile).slice(0, 12).map(toYouTubeTrack)
+    const savedYouTubeRecentMix = sortYouTubeTracks(
+      [...playableYouTubeTracks].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 30),
+      profile
+    ).slice(0, 12).map(toYouTubeTrack)
+    const yourMix = uniqueClientTracks([
+      ...playlistSeeds.map(toLocalTrack),
+      ...playlistYouTubeSeeds.map(toYouTubeTrack),
+      ...directLocalMix.map(toLocalTrack),
+      ...savedYouTubeMix,
+    ])
+    const discoverMix = uniqueClientTracks([
+      ...discoverLocalMix.map(toLocalTrack),
+      ...sortYouTubeTracks(playableYouTubeTracks, profile).map(toYouTubeTrack),
+    ])
+    const newReleaseMix = uniqueClientTracks([
+      ...newReleaseLocalMix.map(toLocalTrack),
+      ...savedYouTubeRecentMix,
+    ])
     const supermix = uniqueLocalTracks([
-      ...yourMix.slice(0, 8),
       ...playlistSeeds.slice(0, 6),
-      ...discoverMix.slice(0, 6),
-      ...newReleaseMix.slice(0, 4),
+      ...directLocalMix.slice(0, 8),
+      ...discoverLocalMix.slice(0, 6),
+      ...newReleaseLocalMix.slice(0, 4),
       ...playableLocalTracks.filter((track) => track.is_favorite),
     ])
-    const artistRadioData = buildArtistRadio(playableLocalTracks, yourMix, profile)
-    const songRadioData = buildSongRadio(playableLocalTracks, yourMix[0] || discoverMix[0] || newReleaseMix[0], profile)
-    const genreMoodData = buildGenreMoodMix(playableLocalTracks, yourMix, profile)
-    const savedYouTubeMix = playableYouTubeTracks
-      .map((track) => ({ track, score: scoreYouTubeTrack(track, profile) }))
-      .sort((a, b) => b.score - a.score || b.track.created_at.localeCompare(a.track.created_at))
-      .slice(0, 12)
-      .map((item) => toYouTubeTrack(item.track))
+    const superClientMix = uniqueClientTracks([
+      ...yourMix.slice(0, 8),
+      ...discoverMix.slice(0, 6),
+      ...newReleaseMix.slice(0, 4),
+      ...savedYouTubeMix.slice(0, 6),
+      ...supermix.map(toLocalTrack),
+    ])
+    const artistRadioData = buildArtistRadio(playableLocalTracks, playlistSeeds.length ? playlistSeeds : directLocalMix, profile)
+    const songRadioData = buildSongRadio(playableLocalTracks, playlistSeeds[0] || directLocalMix[0] || discoverLocalMix[0] || newReleaseLocalMix[0], profile)
+    const genreMoodData = buildGenreMoodMix(playableLocalTracks, playlistSeeds.length ? playlistSeeds : directLocalMix, profile)
     const onlineDiscoverMix = await getOnlineRecommendations(profile, playableLocalTracks, playableYouTubeTracks, 12)
-    const ytMix = uniqueClientTracks([...savedYouTubeMix, ...onlineDiscoverMix]).slice(0, 12)
+    const ytMix = uniqueClientTracks([
+      ...playlistYouTubeSeeds.map(toYouTubeTrack),
+      ...savedYouTubeMix,
+      ...onlineDiscoverMix,
+    ]).slice(0, 12)
 
     return NextResponse.json({
       mixes: {
-        yourMix: yourMix.slice(0, 12).map(toLocalTrack),
+        yourMix: yourMix.slice(0, 12),
         discoverMix: uniqueClientTracks([
-          ...discoverMix.slice(0, 8).map(toLocalTrack),
+          ...discoverMix.slice(0, 8),
           ...onlineDiscoverMix.slice(0, 4),
         ]).slice(0, 12),
-        newReleaseMix: newReleaseMix.slice(0, 12).map(toLocalTrack),
-        supermix: supermix.slice(0, 16).map(toLocalTrack),
+        newReleaseMix: newReleaseMix.slice(0, 12),
+        supermix: superClientMix.slice(0, 16),
         artistRadio: artistRadioData.tracks.slice(0, 12).map(toLocalTrack),
         songRadio: songRadioData.tracks.slice(0, 12).map(toLocalTrack),
         genreMoodMix: genreMoodData.tracks.slice(0, 12).map(toLocalTrack),
@@ -241,6 +264,19 @@ function sortLocalTracks(
     .map((item) => item.track)
 }
 
+function sortYouTubeTracks(
+  tracks: YTTrack[],
+  profile: ReturnType<typeof buildTasteProfile>
+): YTTrack[] {
+  return tracks
+    .map((track) => ({
+      track,
+      score: scoreYouTubeTrack(track, profile),
+    }))
+    .sort((a, b) => b.score - a.score || b.track.created_at.localeCompare(a.track.created_at))
+    .map((item) => item.track)
+}
+
 function getPlaylistSeedLocalTracks(
   tracks: Track[],
   profile: ReturnType<typeof buildTasteProfile>
@@ -272,6 +308,68 @@ function getPlaylistSeedLocalTracks(
         track,
         score:
           scoreLocalTrack(track, profile, "direct") +
+          Number(row.playlist_count || 0) * 48 +
+          positionBoost +
+          recencyScore(row.last_added_at),
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => b!.score - a!.score)
+    .map((item) => item!.track)
+    .slice(0, 24)
+}
+
+function getPlaylistSeedYouTubeTracks(
+  tracks: YTTrack[],
+  profile: ReturnType<typeof buildTasteProfile>
+): YTTrack[] {
+  if (tracks.length === 0) return []
+
+  const trackMap = new Map(tracks.map((track) => [track.video_id, track]))
+  const rows = db.prepare(`
+    SELECT
+      video_id,
+      SUM(playlist_count) as playlist_count,
+      MIN(best_position) as best_position,
+      MAX(last_added_at) as last_added_at
+    FROM (
+      SELECT
+        t.video_id,
+        COUNT(*) as playlist_count,
+        MIN(COALESCE(pt.position, 999999)) as best_position,
+        MAX(pt.added_at) as last_added_at
+      FROM playlist_youtube_tracks pt
+      JOIN yt_tracks t ON t.id = pt.yt_track_id
+      GROUP BY t.video_id
+
+      UNION ALL
+
+      SELECT
+        t.video_id,
+        COUNT(*) as playlist_count,
+        MIN(COALESCE(pt.position, 999999)) as best_position,
+        MAX(pt.added_at) as last_added_at
+      FROM yt_playlist_tracks pt
+      JOIN yt_tracks t ON t.id = pt.yt_track_id
+      GROUP BY t.video_id
+    )
+    GROUP BY video_id
+  `).all() as {
+    video_id: string
+    playlist_count: number
+    best_position: number | null
+    last_added_at: string | null
+  }[]
+
+  return rows
+    .map((row) => {
+      const track = trackMap.get(row.video_id)
+      if (!track) return null
+      const positionBoost = Math.max(0, 20 - Number(row.best_position || 0) * 0.6)
+      return {
+        track,
+        score:
+          scoreYouTubeTrack(track, profile) +
           Number(row.playlist_count || 0) * 48 +
           positionBoost +
           recencyScore(row.last_added_at),

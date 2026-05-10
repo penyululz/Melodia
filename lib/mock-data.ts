@@ -1,0 +1,296 @@
+// Mock data for sandbox testing
+
+export const MOCK_TRACKS = [
+  {
+    id: 1,
+    title: "Blinding Lights",
+    artist: "The Weeknd",
+    album: "After Hours",
+    genre: "Pop",
+    year: 2020,
+    duration: 203,
+    play_count: 156,
+    is_favorite: true,
+    cover_art_path: "/placeholder.svg?height=200&width=200",
+    file_path: "/music/blinding-lights.mp3",
+    source: "local"
+  },
+  {
+    id: 2,
+    title: "Levitating",
+    artist: "Dua Lipa",
+    album: "Future Nostalgia",
+    genre: "Pop",
+    year: 2020,
+    duration: 203,
+    play_count: 142,
+    is_favorite: true,
+    cover_art_path: "/placeholder.svg?height=200&width=200",
+    file_path: "/music/levitating.mp3",
+    source: "local"
+  },
+  {
+    id: 3,
+    title: "Save Your Tears",
+    artist: "The Weeknd",
+    album: "After Hours",
+    genre: "Pop",
+    year: 2020,
+    duration: 215,
+    play_count: 98,
+    is_favorite: false,
+    cover_art_path: "/placeholder.svg?height=200&width=200",
+    file_path: "/music/save-your-tears.mp3",
+    source: "local"
+  },
+  {
+    id: 4,
+    title: "Watermelon Sugar",
+    artist: "Harry Styles",
+    album: "Fine Line",
+    genre: "Pop",
+    year: 2019,
+    duration: 174,
+    play_count: 87,
+    is_favorite: true,
+    cover_art_path: "/placeholder.svg?height=200&width=200",
+    file_path: "/music/watermelon-sugar.mp3",
+    source: "local"
+  },
+  {
+    id: 5,
+    title: "Montero (Call Me By Your Name)",
+    artist: "Lil Nas X",
+    album: "Montero",
+    genre: "Hip-Hop",
+    year: 2021,
+    duration: 137,
+    play_count: 76,
+    is_favorite: false,
+    cover_art_path: "/placeholder.svg?height=200&width=200",
+    file_path: "/music/montero.mp3",
+    source: "local"
+  },
+  {
+    id: 6,
+    title: "Stay",
+    artist: "The Kid LAROI, Justin Bieber",
+    album: "F*CK LOVE 3: OVER YOU",
+    genre: "Pop",
+    year: 2021,
+    duration: 141,
+    play_count: 134,
+    is_favorite: true,
+    cover_art_path: "/placeholder.svg?height=200&width=200",
+    file_path: "/music/stay.mp3",
+    source: "local"
+  },
+  {
+    id: 7,
+    title: "Heat Waves",
+    artist: "Glass Animals",
+    album: "Dreamland",
+    genre: "Indie",
+    year: 2020,
+    duration: 238,
+    play_count: 112,
+    is_favorite: true,
+    cover_art_path: "/placeholder.svg?height=200&width=200",
+    file_path: "/music/heat-waves.mp3",
+    source: "local"
+  },
+  {
+    id: 8,
+    title: "Bad Habits",
+    artist: "Ed Sheeran",
+    album: "=",
+    genre: "Pop",
+    year: 2021,
+    duration: 231,
+    play_count: 89,
+    is_favorite: false,
+    cover_art_path: "/placeholder.svg?height=200&width=200",
+    file_path: "/music/bad-habits.mp3",
+    source: "local"
+  },
+  {
+    id: 9,
+    title: "Industry Baby",
+    artist: "Lil Nas X, Jack Harlow",
+    album: "Montero",
+    genre: "Hip-Hop",
+    year: 2021,
+    duration: 212,
+    play_count: 67,
+    is_favorite: false,
+    cover_art_path: "/placeholder.svg?height=200&width=200",
+    file_path: "/music/industry-baby.mp3",
+    source: "local"
+  },
+  {
+    id: 10,
+    title: "Peaches",
+    artist: "Justin Bieber",
+    album: "Justice",
+    genre: "R&B",
+    year: 2021,
+    duration: 198,
+    play_count: 78,
+    is_favorite: true,
+    cover_art_path: "/placeholder.svg?height=200&width=200",
+    file_path: "/music/peaches.mp3",
+    source: "local"
+  },
+  {
+    id: 11,
+    title: "As It Was",
+    artist: "Harry Styles",
+    album: "Harry's House",
+    genre: "Pop",
+    year: 2022,
+    duration: 167,
+    play_count: 189,
+    is_favorite: true,
+    cover_art_path: "/placeholder.svg?height=200&width=200",
+    file_path: "/music/as-it-was.mp3",
+    source: "local"
+  },
+  {
+    id: 12,
+    title: "About Damn Time",
+    artist: "Lizzo",
+    album: "Special",
+    genre: "Pop",
+    year: 2022,
+    duration: 191,
+    play_count: 145,
+    is_favorite: true,
+    cover_art_path: "/placeholder.svg?height=200&width=200",
+    file_path: "/music/about-damn-time.mp3",
+    source: "local"
+  },
+]
+
+export const MOCK_YOUTUBE_TRACKS = [
+  {
+    id: 101,
+    video_id: "dQw4w9WgXcQ",
+    videoId: "dQw4w9WgXcQ",
+    title: "Never Gonna Give You Up",
+    artist: "Rick Astley",
+    album: "Whenever You Need Somebody",
+    duration: 213,
+    thumbnailUrl: "/placeholder.svg?height=120&width=120",
+    thumbnailUrlHQ: "/placeholder.svg?height=400&width=400",
+    is_favorite: true,
+    is_cached: true,
+    play_count: 42,
+    source: "youtube",
+    type: "song" as const
+  },
+  {
+    id: 102,
+    video_id: "kJQP7kiw5Fk",
+    videoId: "kJQP7kiw5Fk",
+    title: "Despacito",
+    artist: "Luis Fonsi ft. Daddy Yankee",
+    album: "Vida",
+    duration: 282,
+    thumbnailUrl: "/placeholder.svg?height=120&width=120",
+    thumbnailUrlHQ: "/placeholder.svg?height=400&width=400",
+    is_favorite: true,
+    is_cached: false,
+    play_count: 89,
+    source: "youtube",
+    type: "song" as const
+  },
+  {
+    id: 103,
+    video_id: "JGwWNGJdvx8",
+    videoId: "JGwWNGJdvx8",
+    title: "Shape of You",
+    artist: "Ed Sheeran",
+    album: "Divide",
+    duration: 234,
+    thumbnailUrl: "/placeholder.svg?height=120&width=120",
+    thumbnailUrlHQ: "/placeholder.svg?height=400&width=400",
+    is_favorite: false,
+    is_cached: true,
+    play_count: 67,
+    source: "youtube",
+    type: "song" as const
+  },
+  {
+    id: 104,
+    video_id: "RgKAFK5djSk",
+    videoId: "RgKAFK5djSk",
+    title: "See You Again",
+    artist: "Wiz Khalifa ft. Charlie Puth",
+    album: "Furious 7 Soundtrack",
+    duration: 237,
+    thumbnailUrl: "/placeholder.svg?height=120&width=120",
+    thumbnailUrlHQ: "/placeholder.svg?height=400&width=400",
+    is_favorite: true,
+    is_cached: false,
+    play_count: 56,
+    source: "youtube",
+    type: "song" as const
+  },
+  {
+    id: 105,
+    video_id: "OPf0YbXqDm0",
+    videoId: "OPf0YbXqDm0",
+    title: "Uptown Funk",
+    artist: "Mark Ronson ft. Bruno Mars",
+    album: "Uptown Special",
+    duration: 270,
+    thumbnailUrl: "/placeholder.svg?height=120&width=120",
+    thumbnailUrlHQ: "/placeholder.svg?height=400&width=400",
+    is_favorite: false,
+    is_cached: false,
+    play_count: 78,
+    source: "youtube",
+    type: "song" as const
+  },
+]
+
+export const MOCK_ALBUMS = [
+  { album: "After Hours", artist: "The Weeknd", year: 2020, cover_art_path: "/placeholder.svg?height=200&width=200", track_count: 2 },
+  { album: "Future Nostalgia", artist: "Dua Lipa", year: 2020, cover_art_path: "/placeholder.svg?height=200&width=200", track_count: 1 },
+  { album: "Fine Line", artist: "Harry Styles", year: 2019, cover_art_path: "/placeholder.svg?height=200&width=200", track_count: 1 },
+  { album: "Montero", artist: "Lil Nas X", year: 2021, cover_art_path: "/placeholder.svg?height=200&width=200", track_count: 2 },
+  { album: "Dreamland", artist: "Glass Animals", year: 2020, cover_art_path: "/placeholder.svg?height=200&width=200", track_count: 1 },
+  { album: "Justice", artist: "Justin Bieber", year: 2021, cover_art_path: "/placeholder.svg?height=200&width=200", track_count: 1 },
+  { album: "Harry's House", artist: "Harry Styles", year: 2022, cover_art_path: "/placeholder.svg?height=200&width=200", track_count: 1 },
+  { album: "Special", artist: "Lizzo", year: 2022, cover_art_path: "/placeholder.svg?height=200&width=200", track_count: 1 },
+]
+
+export const MOCK_STATS = {
+  total_tracks: 12,
+  total_albums: 8,
+  total_artists: 10,
+  total_duration: 2400,
+  total_favorites: 7,
+  total_plays: 1200,
+}
+
+export const MOCK_MIXES = {
+  yourMix: MOCK_TRACKS.slice(0, 6),
+  discoverMix: MOCK_TRACKS.slice(4, 10),
+  supermix: [...MOCK_TRACKS.filter(t => t.is_favorite)],
+  newReleaseMix: MOCK_TRACKS.filter(t => t.year >= 2021),
+  ytMix: MOCK_YOUTUBE_TRACKS,
+}
+
+export const MOCK_USER = {
+  id: 1,
+  email: "demo@melodia.app",
+  name: "Demo User",
+  avatar_url: null,
+  role: "admin",
+}
+
+// Helper to detect sandbox environment
+export function isSandbox(): boolean {
+  return typeof process !== 'undefined' && process.env.NODE_ENV === 'development'
+}

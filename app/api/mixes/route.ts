@@ -1,0 +1,367 @@
+import { NextRequest, NextResponse } from "next/server"
+import db, { type Track, type YTTrack } from "@/lib/db"
+import { getSessionOrDemo, isDemoSessionEnabled } from "@/lib/auth-policy"
+import { getDemoMixes } from "@/lib/demo-data"
+import {
+  buildTasteProfile,
+  isDislikedLocal,
+  isDislikedYouTube,
+  scoreLocalTrack,
+  scoreYouTubeTrack,
+} from "@/lib/recommendation-engine"
+import { searchYTMusic, type YTSearchResult } from "@/lib/youtube-music"
+
+export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
+
+export async function GET(request: NextRequest) {
+  try {
+    const user = await getSessionOrDemo(request)
+    const localTracks = db.prepare("SELECT * FROM tracks ORDER BY created_at DESC").all() as Track[]
+    const ytTracks = db.prepare("SELECT * FROM yt_tracks ORDER BY created_at DESC").all() as YTTrack[]
+    const musicLocalTracks = localTracks.filter((track) => (track.content_type || "music") !== "podcast")
+    const musicYouTubeTracks = ytTracks.filter((track) => (track.content_type || "music") !== "podcast")
+
+    if (localTracks.length === 0 && ytTracks.length === 0) {
+      if (isDemoSessionEnabled()) return NextResponse.json({ mixes: getDemoMixes() })
+
+      const freshOnlineTracks = await getFreshOnlineStarterMix()
+      return NextResponse.json({
+        mixes: {
+          ...emptyMixes(),
+          ytMix: freshOnlineTracks,
+          mixLabels: {
+            ...emptyMixes().mixLabels,
+            ytMixTitle: "YouTube Starter Mix",
+          },
+        },
+        signals: {
+          personalized: false,
+          localTracks: 0,
+          onlineTracks: freshOnlineTracks.length,
+          algorithm: {
+            behavior: false,
+            itemSimilarity: true,
+            context: "fresh-account",
+            ranking: "cached-youtube-starter-candidates",
+          },
+        },
+      })
+    }
+
+    const profile = buildTasteProfile(user?.id ?? null, localTracks, ytTracks, request)
+    const playableLocalTracks = musicLocalTracks.filter((track) => !isDislikedLocal(track.id, profile))
+    const playableYouTubeTracks = musicYouTubeTracks.filter((track) => !isDislikedYouTube(track.video_id, profile))
+
+    const yourMix = sortLocalTracks(playableLocalTracks, profile, "direct")
+    const discoverMix = sortLocalTracks(playableLocalTracks, profile, "discover")
+    const newReleaseMix = sortLocalTracks(
+      [...playableLocalTracks].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 30),
+      profile,
+      "recent"
+    )
+    const supermix = uniqueLocalTracks([
+      ...yourMix.slice(0, 8),
+      ...discoverMix.slice(0, 6),
+      ...newReleaseMix.slice(0, 4),
+      ...playableLocalTracks.filter((track) => track.is_favorite),
+    ])
+    const artistRadioData = buildArtistRadio(playableLocalTracks, yourMix, profile)
+    const songRadioData = buildSongRadio(playableLocalTracks, yourMix[0] || discoverMix[0] || newReleaseMix[0], profile)
+    const genreMoodData = buildGenreMoodMix(playableLocalTracks, yourMix, profile)
+    const ytMix = playableYouTubeTracks
+      .map((track) => ({ track, score: scoreYouTubeTrack(track, profile) }))
+      .sort((a, b) => b.score - a.score || b.track.created_at.localeCompare(a.track.created_at))
+      .slice(0, 12)
+      .map((item) => toYouTubeTrack(item.track))
+
+    return NextResponse.json({
+      mixes: {
+        yourMix: yourMix.slice(0, 12).map(toLocalTrack),
+        discoverMix: discoverMix.slice(0, 12).map(toLocalTrack),
+        newReleaseMix: newReleaseMix.slice(0, 12).map(toLocalTrack),
+        supermix: supermix.slice(0, 16).map(toLocalTrack),
+        artistRadio: artistRadioData.tracks.slice(0, 12).map(toLocalTrack),
+        songRadio: songRadioData.tracks.slice(0, 12).map(toLocalTrack),
+        genreMoodMix: genreMoodData.tracks.slice(0, 12).map(toLocalTrack),
+        ytMix,
+        mixLabels: {
+          artistRadioTitle: artistRadioData.title,
+          songRadioTitle: songRadioData.title,
+          genreMoodTitle: genreMoodData.title,
+        },
+      },
+      signals: {
+        personalized: Boolean(user),
+        localTracks: localTracks.length,
+        onlineTracks: ytTracks.length,
+        podcastTracks: localTracks.length - musicLocalTracks.length + ytTracks.length - musicYouTubeTracks.length,
+        algorithm: {
+          behavior: true,
+          itemSimilarity: true,
+          similarUsers: true,
+          context: profile.context,
+          ranking: "candidate-generation-plus-ranking",
+        },
+      },
+    })
+  } catch (error) {
+    console.error("[mixes] error:", error)
+    if (isDemoSessionEnabled()) return NextResponse.json({ mixes: getDemoMixes() })
+    return NextResponse.json({ error: "Failed to fetch mixes" }, { status: 500 })
+  }
+}
+
+async function getFreshOnlineStarterMix() {
+  const query = process.env.FRESH_YOUTUBE_MIX_QUERY || "top music"
+  const results = await searchYTMusic(query, 12)
+  return results.map(toFreshYouTubeTrack)
+}
+
+function emptyMixes() {
+  return {
+    yourMix: [],
+    discoverMix: [],
+    newReleaseMix: [],
+    supermix: [],
+    artistRadio: [],
+    songRadio: [],
+    genreMoodMix: [],
+    ytMix: [],
+    mixLabels: {
+      artistRadioTitle: "Artist Radio",
+      songRadioTitle: "Song Radio",
+      genreMoodTitle: "Genre / Mood Mix",
+    },
+  }
+}
+
+function sortLocalTracks(
+  tracks: Track[],
+  profile: ReturnType<typeof buildTasteProfile>,
+  mode: "direct" | "discover" | "recent"
+): Track[] {
+  return tracks
+    .map((track) => ({
+      track,
+      score: scoreLocalTrack(track, profile, mode),
+    }))
+    .sort((a, b) => b.score - a.score || b.track.created_at.localeCompare(a.track.created_at))
+    .map((item) => item.track)
+}
+
+function uniqueLocalTracks(tracks: Track[]) {
+  const seen = new Set<number>()
+  return tracks.filter((track) => {
+    if (seen.has(track.id)) return false
+    seen.add(track.id)
+    return true
+  })
+}
+
+function buildArtistRadio(
+  tracks: Track[],
+  seeds: Track[],
+  profile: ReturnType<typeof buildTasteProfile>
+): { title: string; tracks: Track[] } {
+  const seedArtist = firstNonEmpty(seeds.map((track) => track.artist)) || dominantValue(tracks, "artist")
+  if (!seedArtist) return { title: "Artist Radio", tracks: [] }
+
+  const seedGenres = new Set(
+    seeds
+      .filter((track) => normalized(track.artist) === normalized(seedArtist))
+      .map((track) => normalized(track.genre))
+      .filter(Boolean) as string[]
+  )
+  const seedMoods = new Set(
+    seeds
+      .filter((track) => normalized(track.artist) === normalized(seedArtist))
+      .map((track) => normalized(getTrackMood(track)))
+      .filter(Boolean) as string[]
+  )
+
+  const ranked = tracks
+    .map((track) => {
+      const sameArtist = normalized(track.artist) === normalized(seedArtist)
+      const relatedGenre = seedGenres.has(normalized(track.genre) || "")
+      const relatedMood = seedMoods.has(normalized(getTrackMood(track)) || "")
+      return {
+        track,
+        score:
+          scoreLocalTrack(track, profile, sameArtist ? "direct" : "discover") +
+          (sameArtist ? 80 : 0) +
+          (relatedGenre ? 24 : 0) +
+          (relatedMood ? 18 : 0),
+      }
+    })
+    .filter((item) => item.score > -500)
+    .sort((a, b) => b.score - a.score || b.track.created_at.localeCompare(a.track.created_at))
+    .map((item) => item.track)
+
+  return { title: `${seedArtist} Radio`, tracks: uniqueLocalTracks(ranked) }
+}
+
+function buildSongRadio(
+  tracks: Track[],
+  seed: Track | undefined,
+  profile: ReturnType<typeof buildTasteProfile>
+): { title: string; tracks: Track[] } {
+  if (!seed) return { title: "Song Radio", tracks: [] }
+
+  const seedTempo = getTempoBucket(getTrackTempo(seed))
+  const ranked = tracks
+    .map((track) => {
+      const sameTrack = track.id === seed.id
+      return {
+        track,
+        score:
+          scoreLocalTrack(track, profile, sameTrack ? "direct" : "discover") +
+          (sameTrack ? 90 : 0) +
+          (sameValue(track.artist, seed.artist) ? 36 : 0) +
+          (sameValue(track.album, seed.album) ? 20 : 0) +
+          (sameValue(track.genre, seed.genre) ? 28 : 0) +
+          (sameValue(getTrackMood(track), getTrackMood(seed)) ? 24 : 0) +
+          (sameValue(getTrackStyle(track), getTrackStyle(seed)) ? 18 : 0) +
+          (getTempoBucket(getTrackTempo(track)) === seedTempo ? 10 : 0),
+      }
+    })
+    .sort((a, b) => b.score - a.score || b.track.created_at.localeCompare(a.track.created_at))
+    .map((item) => item.track)
+
+  return { title: `${seed.title} Radio`, tracks: uniqueLocalTracks(ranked) }
+}
+
+function buildGenreMoodMix(
+  tracks: Track[],
+  seeds: Track[],
+  profile: ReturnType<typeof buildTasteProfile>
+): { title: string; tracks: Track[] } {
+  const mood = dominantValue(seeds, "mood") || dominantValue(tracks, "mood")
+  const genre = dominantValue(seeds, "genre") || dominantValue(tracks, "genre")
+  const target = mood || genre
+  if (!target) return { title: "Genre Mix", tracks: [] }
+
+  const mode: "mood" | "genre" = mood ? "mood" : "genre"
+  const ranked = tracks
+    .map((track) => {
+      const exact = mode === "mood" ? sameValue(getTrackMood(track), target) : sameValue(track.genre, target)
+      const adjacent =
+        mode === "mood"
+          ? sameValue(track.genre, genre) || sameValue(getTrackStyle(track), target)
+          : sameValue(getTrackMood(track), mood)
+
+      return {
+        track,
+        score: scoreLocalTrack(track, profile, exact ? "direct" : "discover") + (exact ? 70 : 0) + (adjacent ? 18 : 0),
+      }
+    })
+    .filter((item) => item.score > -500)
+    .sort((a, b) => b.score - a.score || b.track.created_at.localeCompare(a.track.created_at))
+    .map((item) => item.track)
+
+  return {
+    title: mode === "mood" ? `${titleCase(target)} Mix` : `${target} Mix`,
+    tracks: uniqueLocalTracks(ranked),
+  }
+}
+
+function dominantValue(tracks: Track[], field: "artist" | "genre" | "mood"): string | null {
+  const counts = new Map<string, { label: string; score: number }>()
+  for (const track of tracks) {
+    const value = field === "mood" ? getTrackMood(track) : track[field]
+    const key = normalized(value)
+    if (!key || key === "unknown artist" || key === "unknown album") continue
+    const existing = counts.get(key)
+    counts.set(key, {
+      label: value || key,
+      score: (existing?.score || 0) + 1 + track.play_count * 0.05 + (track.is_favorite ? 1 : 0),
+    })
+  }
+
+  return [...counts.values()].sort((a, b) => b.score - a.score)[0]?.label || null
+}
+
+function getTrackMood(track: Track): string | null {
+  return (track as Track & { mood?: string | null }).mood || null
+}
+
+function getTrackStyle(track: Track): string | null {
+  return (track as Track & { style?: string | null }).style || track.genre || null
+}
+
+function getTrackTempo(track: Track): number | null {
+  const tempo = Number((track as Track & { tempo?: number | null }).tempo)
+  return Number.isFinite(tempo) && tempo > 0 ? tempo : null
+}
+
+function getTempoBucket(tempo: number | null): string {
+  if (!tempo) return "unknown-tempo"
+  if (tempo < 90) return "slow"
+  if (tempo < 120) return "mid"
+  if (tempo < 145) return "upbeat"
+  return "fast"
+}
+
+function firstNonEmpty(values: Array<string | null | undefined>): string | null {
+  return values.find((value) => value?.trim())?.trim() || null
+}
+
+function sameValue(a: string | null | undefined, b: string | null | undefined): boolean {
+  const left = normalized(a)
+  const right = normalized(b)
+  return Boolean(left && right && left === right)
+}
+
+function normalized(value: string | null | undefined): string | null {
+  const result = value?.trim().toLowerCase()
+  return result || null
+}
+
+function titleCase(value: string): string {
+  return value
+    .split(/[\s-]+/)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ")
+}
+
+function toLocalTrack(track: Track) {
+  return {
+    ...track,
+    source: "local" as const,
+  }
+}
+
+function toYouTubeTrack(track: YTTrack) {
+  return {
+    id: track.id,
+    source: "youtube" as const,
+    videoId: track.video_id,
+    title: track.title,
+    artist: track.artist,
+    album: track.album,
+    duration: track.duration,
+    cover_art_path: track.thumbnail_url,
+    is_favorite: track.is_favorite,
+    is_cached: track.is_cached,
+    play_count: track.play_count,
+  }
+}
+
+function toFreshYouTubeTrack(track: YTSearchResult) {
+  return {
+    id: `youtube-${track.videoId}`,
+    source: "youtube" as const,
+    videoId: track.videoId,
+    title: track.title,
+    artist: track.artist,
+    album: track.album,
+    duration: track.duration,
+    cover_art_path: track.thumbnailUrlHQ || track.thumbnailUrl,
+    thumbnailUrl: track.thumbnailUrl,
+    thumbnailUrlHQ: track.thumbnailUrlHQ,
+    is_favorite: false,
+    is_cached: false,
+    play_count: 0,
+  }
+}

@@ -1,0 +1,6 @@
+allowBuilds:
+  '@biomejs/biome': true
+  better-sqlite3: true
+  ffmpeg-static: true
+  sharp: true
+  unrs-resolver: true

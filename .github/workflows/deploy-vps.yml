@@ -1,0 +1,116 @@
+name: Deploy Melodia to VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: melodia-vps-deploy
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: corepack pnpm typecheck
+
+      - name: Lint
+        run: corepack pnpm lint
+
+      - name: Build
+        run: corepack pnpm build
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: verify
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    env:
+      APP_ROOT: ${{ secrets.APP_ROOT || '/var/www/melodia' }}
+      SSH_PORT: ${{ secrets.VPS_PORT || '22' }}
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create release archive
+        run: |
+          tar \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.next' \
+            --exclude='node_modules' \
+            --exclude='data' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='tsconfig.tsbuildinfo' \
+            -czf melodia-release.tgz .
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/melodia_deploy_key
+          chmod 600 ~/.ssh/melodia_deploy_key
+          ssh-keyscan -p "$SSH_PORT" "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload release
+        run: |
+          scp -P "$SSH_PORT" -i ~/.ssh/melodia_deploy_key melodia-release.tgz "$VPS_USER@$VPS_HOST:/tmp/melodia-release-${GITHUB_SHA}.tgz"
+
+      - name: Activate release
+        run: |
+          ssh -p "$SSH_PORT" -i ~/.ssh/melodia_deploy_key "$VPS_USER@$VPS_HOST" \
+            "APP_ROOT='$APP_ROOT' DEPLOY_SHA='$GITHUB_SHA' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          RELEASE_DIR="$APP_ROOT/releases/$DEPLOY_SHA"
+          SHARED_DIR="$APP_ROOT/shared"
+
+          mkdir -p "$APP_ROOT/releases" "$SHARED_DIR/data" "$SHARED_DIR/uploads" "$SHARED_DIR/covers" "$SHARED_DIR/music"
+          rm -rf "$RELEASE_DIR"
+          mkdir -p "$RELEASE_DIR"
+          tar -xzf "/tmp/melodia-release-$DEPLOY_SHA.tgz" -C "$RELEASE_DIR"
+
+          ln -sfn "$SHARED_DIR/data" "$RELEASE_DIR/data"
+          mkdir -p "$RELEASE_DIR/public/music"
+          rm -rf "$RELEASE_DIR/public/music/uploads"
+          ln -sfn "$SHARED_DIR/uploads" "$RELEASE_DIR/public/music/uploads"
+          rm -rf "$RELEASE_DIR/public/covers"
+          ln -sfn "$SHARED_DIR/covers" "$RELEASE_DIR/public/covers"
+
+          if [ -f "$SHARED_DIR/.env.local" ]; then
+            ln -sfn "$SHARED_DIR/.env.local" "$RELEASE_DIR/.env.local"
+          fi
+
+          cd "$RELEASE_DIR"
+          corepack enable
+          corepack pnpm install --frozen-lockfile
+          corepack pnpm build
+
+          ln -sfn "$RELEASE_DIR" "$APP_ROOT/current"
+          sudo systemctl restart melodia
+
+          find "$APP_ROOT/releases" -mindepth 1 -maxdepth 1 -type d | sort | head -n -5 | xargs -r rm -rf
+          rm -f "/tmp/melodia-release-$DEPLOY_SHA.tgz"
+REMOTE

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { queries, YTTrack } from "@/lib/db"
 import {
+  downloadYouTubeMedia,
   getMediaMimeType,
   getYouTubeDirectStream,
   YtDlpUnavailableError,
@@ -76,14 +77,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       : await getBestAudioStream(videoId, targetBitrate)
 
     if (!stream) {
-      stream = await getYtDlpStream(videoId, quality, mode)
+      stream = await getYtDlpStream(videoId, quality, mode).catch((error) => {
+        console.warn("[v0] yt-dlp direct stream fallback failed, trying local download:", error)
+        return null
+      })
     }
     
     if (!stream) {
-      return NextResponse.json(
-        { error: `Could not get ${mode} stream` }, 
-        { status: 500 }
-      )
+      return await serveDownloadedFallback(videoId, quality, mode, range, ytTrack)
     }
 
     // Proxy the stream with low latency headers
@@ -102,10 +103,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       headers: proxyHeaders,
       // @ts-ignore - signal timeout for faster fallback
       signal: AbortSignal.timeout(15000),
+    }).catch((error) => {
+      console.warn("[v0] YouTube stream proxy fetch failed, trying local download:", error)
+      return null
     })
 
-    if (!response.ok && !response.status.toString().startsWith("2")) {
-      throw new Error(`Stream fetch failed: ${response.status}`)
+    if (!response || (!response.ok && !response.status.toString().startsWith("2"))) {
+      console.warn("[v0] YouTube stream proxy returned an unusable response, trying local download:", response?.status)
+      return await serveDownloadedFallback(videoId, quality, mode, range, ytTrack)
     }
 
     // Build response headers
@@ -145,6 +150,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       { status: 500 }
     )
   }
+}
+
+async function serveDownloadedFallback(
+  videoId: string,
+  quality: YtDownloadQuality,
+  mode: YtDownloadMediaType,
+  range: string | null,
+  ytTrack: YTTrack | null
+): Promise<NextResponse> {
+  const download = await downloadYouTubeMedia(videoId, quality, mode)
+  if (ytTrack) {
+    queries.updateYTTrackCached.run(download.filePath, quality, mode, videoId)
+  }
+  return serveLocalFile(download.filePath, range)
 }
 
 async function getYtDlpStream(

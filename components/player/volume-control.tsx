@@ -28,9 +28,10 @@ export function VolumeControl() {
         <Button
           variant="ghost"
           size="icon"
-          className="hidden h-9 w-9 sm:flex"
+          className="flex h-8 w-8 sm:h-9 sm:w-9"
+          title="Volume"
         >
-          <VolumeIcon className="h-5 w-5" />
+          <VolumeIcon className="h-4 w-4 sm:h-5 sm:w-5" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-3" side="top" align="center">

@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge"
 import { MarqueeText } from "@/components/ui/marquee-text"
 import { Heart, Music, Youtube } from "lucide-react"
 import useSWR, { mutate } from "swr"
+import { toast } from "sonner"
+import { getYouTubeVideoIdFromTrack } from "@/lib/offline-media"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
@@ -17,40 +19,95 @@ interface NowPlayingProps {
 
 export function NowPlaying({ onExpand }: NowPlayingProps) {
   const { currentTrack } = usePlayerStore()
-  const { streamingQuality, playbackMode } = useSettingsStore()
-  const isYouTube = currentTrack?.source === "youtube"
+  const { autoDownloadLibraryActions, downloadQuality, streamingQuality } = useSettingsStore()
+  const youtubeVideoId = getYouTubeVideoIdFromTrack(currentTrack || null)
+  const isYouTube = Boolean(youtubeVideoId)
 
   // Fetch the full track data to get favorite status
   const { data } = useSWR(
     currentTrack 
       ? isYouTube 
-        ? `/api/youtube/tracks/${currentTrack.videoId}` 
+        ? `/api/youtube/tracks/${youtubeVideoId}` 
         : `/api/tracks/${currentTrack.id}` 
       : null,
     fetcher
   )
 
-  const isFavorite = data?.track?.is_favorite === 1
+  const isFavorite = data?.track?.is_favorite === 1 || data?.track?.is_favorite === true
 
   const toggleFavorite = async () => {
     if (!currentTrack) return
 
-    if (isYouTube) {
-      await fetch(`/api/youtube/tracks/${currentTrack.videoId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "toggleFavorite" }),
-      })
-      mutate(`/api/youtube/tracks/${currentTrack.videoId}`)
-      mutate("/api/youtube/tracks?filter=favorites")
-    } else {
-      await fetch(`/api/tracks/${currentTrack.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ favorite: true }),
-      })
-      mutate(`/api/tracks/${currentTrack.id}`)
-      mutate("/api/tracks?favorites=true")
+    try {
+      if (isYouTube && youtubeVideoId) {
+        let response = await fetch(`/api/youtube/tracks/${youtubeVideoId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "toggleFavorite" }),
+        })
+
+        if (response.status === 404) {
+          const saveResponse = await fetch("/api/youtube/tracks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              videoId: youtubeVideoId,
+              title: currentTrack.title,
+              artist: currentTrack.artist,
+              album: currentTrack.album,
+              duration: currentTrack.duration,
+              thumbnailUrl: currentTrack.cover_art_path,
+              contentType: currentTrack.content_type || "music",
+              podcastTitle: currentTrack.podcast_title,
+              podcastAuthor: currentTrack.podcast_author,
+            }),
+          })
+          const saveData = await saveResponse.json().catch(() => null)
+          if (!saveResponse.ok) {
+            throw new Error(saveData?.error || "Failed to save song before favoriting")
+          }
+
+          response = await fetch(`/api/youtube/tracks/${youtubeVideoId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "toggleFavorite" }),
+          })
+        }
+
+        const data = await response.json().catch(() => null)
+        if (!response.ok) {
+          throw new Error(data?.error || "Failed to update favorite")
+        }
+
+        mutate(`/api/youtube/tracks/${youtubeVideoId}`)
+        mutate("/api/youtube/tracks")
+        mutate("/api/youtube/tracks?filter=favorites")
+        mutate("/api/tracks")
+        mutate("/api/tracks?favorites=true")
+
+        const isNowFavorite = data?.track?.is_favorite === 1 || data?.track?.is_favorite === true
+        if (isNowFavorite && autoDownloadLibraryActions) {
+          fetch(`/api/youtube/download/${youtubeVideoId}?quality=${downloadQuality}&media=audio`, {
+            method: "POST",
+          }).catch(() => {})
+        }
+      } else {
+        const response = await fetch(`/api/tracks/${currentTrack.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ favorite: true }),
+        })
+        const data = await response.json().catch(() => null)
+        if (!response.ok) {
+          throw new Error(data?.error || "Failed to update favorite")
+        }
+
+        mutate(`/api/tracks/${currentTrack.id}`)
+        mutate("/api/tracks")
+        mutate("/api/tracks?favorites=true")
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update favorite")
     }
   }
 
@@ -105,7 +162,8 @@ export function NowPlaying({ onExpand }: NowPlayingProps) {
           e.stopPropagation()
           toggleFavorite()
         }}
-        className="hidden h-8 w-8 flex-shrink-0 sm:flex"
+        className="h-8 w-8 flex-shrink-0"
+        title={isFavorite ? "Remove favorite" : "Favorite"}
       >
         <Heart
           className={`h-4 w-4 ${isFavorite ? "fill-primary text-primary" : ""}`}

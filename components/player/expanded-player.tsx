@@ -97,7 +97,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
   const currentTime = playerCurrentTime
   const trackDuration = Number(currentTrack?.duration)
   const duration =
-    playerDuration > 0
+    Number.isFinite(playerDuration) && playerDuration > 0
       ? playerDuration
       : Number.isFinite(trackDuration) && trackDuration > 0
         ? trackDuration
@@ -113,14 +113,20 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
   const isYouTube = Boolean(feedbackVideoId)
   const isLocalVideo = !isYouTube && currentTrack?.source !== "youtube" && hasVideoExtension(currentTrack || null)
   const shouldRenderVideo = playbackMode === "video" && (isYouTube || isLocalVideo)
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0
+  const safeCurrentTime = duration > 0
+    ? Math.min(Math.max(currentTime, 0), duration)
+    : Math.max(currentTime, 0)
+  const progress = duration > 0
+    ? Math.min(100, Math.max(0, (safeCurrentTime / duration) * 100))
+    : 0
   const feedbackTrackId = !feedbackVideoId && Number.isInteger(Number(currentTrack?.id))
     ? Number(currentTrack?.id)
     : null
 
   const handleSeek = (value: number[]) => {
     if (duration <= 0) return
-    const nextTime = (value[0] / 100) * duration
+    const percent = Math.min(100, Math.max(0, value[0]))
+    const nextTime = (percent / 100) * duration
     seekToPlayback(nextTime)
   }
 
@@ -324,6 +330,35 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
   // Compute volume icon
   const VolumeIcon = isMuted || volume === 0 ? VolumeX : volume < 0.3 ? Volume : volume < 0.7 ? Volume1 : Volume2
 
+  const renderVolumeControl = (buttonClassName: string) => (
+    <div className="relative flex flex-shrink-0 items-center">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => setShowVolume(!showVolume)}
+        className={cn(buttonClassName, showVolume ? "text-primary" : "text-muted-foreground")}
+        title="Volume"
+      >
+        <VolumeIcon className="h-5 w-5" />
+      </Button>
+      {showVolume && (
+        <div className="absolute bottom-full left-1/2 z-20 mb-2 flex -translate-x-1/2 flex-col items-center gap-2 rounded-lg border bg-popover px-3 py-3 shadow-xl">
+          <Slider
+            value={[isMuted ? 0 : volume * 100]}
+            max={100}
+            step={1}
+            orientation="vertical"
+            onValueChange={(value) => setVolume(value[0] / 100)}
+            className="h-24 w-2"
+          />
+          <Button variant="ghost" size="icon" onClick={toggleMute} className="h-8 w-8">
+            <VolumeIcon className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+
   // Video fullscreen mode
   if (isVideoFullscreen && shouldRenderVideo) {
     return (
@@ -385,7 +420,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
 
             {/* Timestamp */}
             <span className="whitespace-nowrap text-xs text-white/60 lg:text-sm">
-              {formatTime(currentTime)} / {formatTime(duration)}
+              {formatTime(safeCurrentTime)} / {formatTime(duration)}
             </span>
 
             {/* Track info — desktop only, fills remaining space */}
@@ -571,7 +606,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
             <div className="w-full max-w-[380px]">
               <Slider value={[progress]} max={100} step={0.1} onValueChange={handleSeek} className="cursor-pointer" />
               <div className="mt-1.5 flex justify-between text-xs text-muted-foreground">
-                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(safeCurrentTime)}</span>
                 <span>{formatTime(duration)}</span>
               </div>
             </div>
@@ -596,6 +631,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
                 className={cn("h-9 w-9 text-muted-foreground", repeat !== "off" && "text-primary")}>
                 {repeat === "one" ? <Repeat1 className="h-5 w-5" /> : <Repeat className="h-5 w-5" />}
               </Button>
+              {renderVolumeControl("h-9 w-9")}
             </div>
           </div>
 
@@ -734,31 +770,32 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
         <div className="mt-6 px-6">
           <Slider value={[progress]} max={100} step={0.1} onValueChange={handleSeek} className="cursor-pointer" />
           <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-            <span>{formatTime(currentTime)}</span>
+            <span>{formatTime(safeCurrentTime)}</span>
             <span>{formatTime(duration)}</span>
           </div>
         </div>
 
         {/* Controls */}
-        <div className="mt-4 flex items-center justify-center gap-4 px-6">
+        <div className="mt-4 flex items-center justify-center gap-1 px-4 sm:gap-4 sm:px-6">
           <Button variant="ghost" size="icon" onClick={toggleShuffle}
             className={cn("h-10 w-10 text-muted-foreground", shuffle && "text-primary")}>
             <Shuffle className="h-5 w-5" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={playPrevious} className="h-12 w-12">
+          <Button variant="ghost" size="icon" onClick={playPrevious} className="h-11 w-11 sm:h-12 sm:w-12">
             <SkipBack className="h-6 w-6 fill-current" />
           </Button>
           <Button onClick={togglePlay} size="icon"
-            className="h-16 w-16 rounded-full bg-foreground text-background hover:bg-foreground/90">
+            className="h-14 w-14 rounded-full bg-foreground text-background hover:bg-foreground/90 sm:h-16 sm:w-16">
             {isPlaying ? <Pause className="h-7 w-7 fill-current" /> : <Play className="h-7 w-7 fill-current" />}
           </Button>
-          <Button variant="ghost" size="icon" onClick={playNext} className="h-12 w-12">
+          <Button variant="ghost" size="icon" onClick={playNext} className="h-11 w-11 sm:h-12 sm:w-12">
             <SkipForward className="h-6 w-6 fill-current" />
           </Button>
           <Button variant="ghost" size="icon" onClick={cycleRepeat}
             className={cn("h-10 w-10 text-muted-foreground", repeat !== "off" && "text-primary")}>
             {repeat === "one" ? <Repeat1 className="h-5 w-5" /> : <Repeat className="h-5 w-5" />}
           </Button>
+          {renderVolumeControl("h-10 w-10")}
         </div>
 
         {/* Queue label */}

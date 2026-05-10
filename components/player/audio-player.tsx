@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { usePlayerStore } from "@/stores/player-store"
 import { useSidebarStore } from "@/stores/sidebar-store"
 import { seekToPlayback } from "@/lib/playback-events"
@@ -18,11 +18,19 @@ import { hasVideoExtension } from "@/lib/format"
 import { getYouTubeVideoIdFromTrack } from "@/lib/offline-media"
 
 export function AudioPlayer() {
-  const { currentTrack, setExpandedPlayerOpen } = usePlayerStore()
+  const { currentTrack, isPlaying, setExpandedPlayerOpen } = usePlayerStore()
   const { isCollapsed } = useSidebarStore()
   const isYouTube = Boolean(getYouTubeVideoIdFromTrack(currentTrack || null))
   const canPlayVideo = isYouTube || hasVideoExtension(currentTrack || null)
   const [isExpanded, setIsExpanded] = useState(false)
+
+  useEffect(() => {
+    if (isPlaying) return
+
+    document.querySelectorAll<HTMLMediaElement>("audio, video").forEach((media) => {
+      if (!media.paused) media.pause()
+    })
+  }, [currentTrack?.id, currentTrack?.videoId, isPlaying])
 
   if (!currentTrack) return null
 

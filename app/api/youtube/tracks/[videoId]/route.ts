@@ -49,6 +49,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const updatedTrack = queries.getYTTrackByVideoId.get(videoId) as YTTrack
+    if (action === "toggleFavorite") {
+      db.prepare(`
+        UPDATE tracks
+        SET is_favorite = ?, updated_at = datetime('now')
+        WHERE file_path = ?
+      `).run(updatedTrack.is_favorite ? 1 : 0, `/api/youtube/stream/${videoId}`)
+    }
 
     return NextResponse.json({ track: updatedTrack })
   } catch (error) {

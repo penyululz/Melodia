@@ -112,6 +112,15 @@ function recordTrackTransition(state: Pick<PlayerState, "currentTrack" | "curren
   }).catch(() => {})
 }
 
+function getInitialDuration(track: Pick<Track, "duration"> | null): number {
+  const duration = Number(track?.duration)
+  return Number.isFinite(duration) && duration > 0 ? duration : 0
+}
+
+function getSafeTime(time: number): number {
+  return Number.isFinite(time) && time > 0 ? time : 0
+}
+
 export const usePlayerStore = create<PlayerState>()(
   persist(
     (set, get) => ({
@@ -141,12 +150,14 @@ export const usePlayerStore = create<PlayerState>()(
             queueIndex: index >= 0 ? index : 0,
             isPlaying: true,
             currentTime: 0,
+            duration: getInitialDuration(track),
           })
         } else {
           set({
             currentTrack: track,
             isPlaying: true,
             currentTime: 0,
+            duration: getInitialDuration(track),
           })
         }
       },
@@ -155,9 +166,9 @@ export const usePlayerStore = create<PlayerState>()(
 
       togglePlay: () => set((state) => ({ isPlaying: !state.isPlaying })),
 
-      setCurrentTime: (time) => set({ currentTime: time }),
+      setCurrentTime: (time) => set({ currentTime: getSafeTime(time) }),
 
-      setDuration: (duration) => set({ duration }),
+      setDuration: (duration) => set({ duration: getInitialDuration({ duration }) }),
 
       setVolume: (volume) => set({ volume, isMuted: false }),
 
@@ -173,6 +184,8 @@ export const usePlayerStore = create<PlayerState>()(
           originalQueue: tracks,
           queueIndex: startIndex,
           currentTrack: queue[startIndex] || null,
+          currentTime: 0,
+          duration: getInitialDuration(queue[startIndex] || null),
         })
       },
 
@@ -213,7 +226,7 @@ export const usePlayerStore = create<PlayerState>()(
 
         if (state.repeat === "one") {
           // Repeat the same track
-          set({ currentTime: 0, isPlaying: true })
+          set({ currentTime: 0, duration: getInitialDuration(state.currentTrack), isPlaying: true })
           return
         }
 
@@ -231,6 +244,7 @@ export const usePlayerStore = create<PlayerState>()(
           queueIndex: nextIndex,
           currentTrack: state.queue[nextIndex],
           currentTime: 0,
+          duration: getInitialDuration(state.queue[nextIndex]),
           isPlaying: true,
         })
       },
@@ -242,7 +256,7 @@ export const usePlayerStore = create<PlayerState>()(
         // If more than 3 seconds in, restart current track
         if (state.currentTime > 3) {
           recordTrackTransition(state)
-          set({ currentTime: 0 })
+          set({ currentTime: 0, duration: getInitialDuration(state.currentTrack) })
           return
         }
 
@@ -259,6 +273,7 @@ export const usePlayerStore = create<PlayerState>()(
           queueIndex: prevIndex,
           currentTrack: state.queue[prevIndex],
           currentTime: 0,
+          duration: getInitialDuration(state.queue[prevIndex]),
           isPlaying: true,
         })
       },
@@ -315,12 +330,14 @@ export const usePlayerStore = create<PlayerState>()(
             queueIndex: index >= 0 ? index : 0,
             isPlaying: true,
             currentTime: 0,
+            duration: getInitialDuration(ytTrack),
           })
         } else {
           set({
             currentTrack: ytTrack,
             isPlaying: true,
             currentTime: 0,
+            duration: getInitialDuration(ytTrack),
           })
         }
       },

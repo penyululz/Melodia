@@ -116,9 +116,7 @@ export function useAudioPlayer() {
     const activeTrack = currentTrack
     const activeTrackKey = getTrackMediaKey(activeTrack)
     const knownDuration = getUsableDuration(null, activeTrack.duration)
-    if (knownDuration > 0) {
-      setDuration(knownDuration)
-    }
+    setDuration(knownDuration)
 
     // Determine audio source based on track type and settings
     const youtubeVideoId = getYouTubeVideoIdFromTrack(activeTrack)

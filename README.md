@@ -102,12 +102,22 @@ corepack pnpm youtube:repair-metadata
 sudo systemctl restart melodia
 ```
 
+If older imported YouTube songs have no cached lyrics, pre-fill lyrics from LRCLIB into the local database:
+
+```bash
+cd /var/www/melodia/current
+corepack pnpm lyrics:repair --dry-run
+corepack pnpm lyrics:repair
+sudo systemctl restart melodia
+```
+
 ## Playlist Import
 
 Open Playlists, choose **Import YouTube**, and paste a YouTube or YouTube Music playlist URL. Melodia will:
 
 - fetch playlist metadata,
 - cache artwork locally when possible,
+- fetch and cache matching lyrics locally when available,
 - save each YouTube track to the app database,
 - create or refresh a normal Melodia playlist,
 - keep the playlist playable through the same queue/player flow.

@@ -4,6 +4,7 @@ import { getYTPlaylist, getYTSongDetails, extractPlaylistId, type YTSearchResult
 import { authErrorResponse, requireMutationAuth } from "@/lib/auth-policy"
 import { deriveAudioDescriptors, detectLibraryContentType, saveRemoteImageAsWebp } from "@/lib/metadata"
 import { saveBestYouTubeThumbnailAsWebp } from "@/lib/youtube-artwork"
+import { cacheLyricsForTrack } from "@/lib/lyrics-service"
 
 // GET - List all imported YouTube playlists
 export async function GET() {
@@ -75,6 +76,7 @@ export async function POST(request: NextRequest) {
 
     // Insert tracks and link to playlist
     let importedTrackCount = 0
+    let importedLyricsCount = 0
     for (let i = 0; i < playlistInfo.tracks.length; i++) {
       const track = await resolveImportTrackDetails(playlistInfo.tracks[i])
       if (!track.videoId) continue
@@ -98,6 +100,8 @@ export async function POST(request: NextRequest) {
           INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position)
           VALUES (?, ?, ?)
         `).run(nativePlaylist.id, localTrack.id, i + 1)
+        const lyricsCached = await cacheLyricsForImportedTrack(localTrack.id, track)
+        if (lyricsCached) importedLyricsCount += 1
         importedTrackCount += 1
       }
     }
@@ -122,6 +126,7 @@ export async function POST(request: NextRequest) {
         track_count: importedTrackCount,
       },
       importedTracks: importedTrackCount,
+      importedLyrics: importedLyricsCount,
     })
   } catch (error) {
     const authResponse = authErrorResponse(error)
@@ -129,6 +134,22 @@ export async function POST(request: NextRequest) {
     console.error("[v0] Import YT playlist error:", error)
     return NextResponse.json({ error: "Failed to import playlist" }, { status: 500 })
   }
+}
+
+async function cacheLyricsForImportedTrack(trackId: number, track: YTSearchResult): Promise<boolean> {
+  if (track.content_type === "podcast") return false
+
+  return cacheLyricsForTrack({
+    trackId,
+    videoId: track.videoId,
+    title: track.title,
+    artist: track.artist,
+    album: track.album,
+    duration: track.duration,
+  }).catch((error) => {
+    console.warn(`[lyrics] Could not cache lyrics for ${track.videoId}:`, error)
+    return false
+  })
 }
 
 function upsertImportedYouTubePlaylist(

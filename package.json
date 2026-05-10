@@ -13,6 +13,7 @@
     "demo:status": "node scripts/demo.cjs status",
     "demo:verify": "node scripts/demo.cjs verify",
     "artwork:repair": "node scripts/repair-youtube-artwork.cjs",
+    "lyrics:repair": "node scripts/repair-youtube-lyrics.cjs",
     "youtube:repair-metadata": "node scripts/repair-youtube-metadata.cjs",
     "smoke:api": "node scripts/smoke-api.cjs",
     "lint": "eslint .",

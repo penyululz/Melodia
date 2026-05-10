@@ -265,7 +265,7 @@ function spawnYtDlp(
   args: string[]
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(candidate.command, [...candidate.prefixArgs, ...args], {
+    const child = spawn(candidate.command, [...candidate.prefixArgs, ...getYtDlpGlobalArgs(), ...args], {
       cwd: process.cwd(),
       windowsHide: true,
     })
@@ -323,6 +323,27 @@ function spawnYtDlp(
 
 function isMissingYtDlpError(error: unknown): boolean {
   return error instanceof YtDlpUnavailableError
+}
+
+function getYtDlpGlobalArgs(): string[] {
+  const globalArgs: string[] = []
+  const cookiesPath = cleanEnvValue(process.env.YT_DLP_COOKIES_PATH)
+  const jsRuntime = cleanEnvValue(process.env.YT_DLP_JS_RUNTIME)
+
+  if (cookiesPath) {
+    globalArgs.push("--cookies", cookiesPath)
+  }
+
+  if (jsRuntime) {
+    globalArgs.push("--js-runtimes", jsRuntime)
+  }
+
+  return globalArgs
+}
+
+function cleanEnvValue(value: string | undefined): string | null {
+  const clean = value?.trim().replace(/^"|"$/g, "")
+  return clean || null
 }
 
 function appendCapturedOutput(current: string, chunk: Buffer): string {

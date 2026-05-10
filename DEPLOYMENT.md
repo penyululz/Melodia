@@ -119,8 +119,18 @@ Set these paths in the app environment later:
 
 ```text
 YT_DLP_PATH=/home/melodia/.local/bin/yt-dlp
+YT_DLP_JS_RUNTIME=node:/usr/bin/node
+YT_DLP_COOKIES_PATH=/var/www/melodia/shared/youtube-cookies.txt
 FFMPEG_PATH=/usr/bin/ffmpeg
 ```
+
+Some VPS IPs are challenged by YouTube with "Sign in to confirm you're not a bot". If that happens, export a Netscape-format YouTube cookies file from a browser session you control, upload it outside the repo, and lock down permissions:
+
+```bash
+sudo install -o melodia -g melodia -m 600 /tmp/youtube-cookies.txt /var/www/melodia/shared/youtube-cookies.txt
+```
+
+Use a dedicated YouTube account for this server cookie if possible. Cookies are private credentials; never commit them to GitHub, paste them into Actions logs, or place them under `public/`.
 
 ## 5. Create Production Environment
 
@@ -147,6 +157,8 @@ MAX_UPLOAD_FILE_MB=500
 MAX_UPLOAD_REQUEST_MB=2048
 
 YT_DLP_PATH=/home/melodia/.local/bin/yt-dlp
+YT_DLP_JS_RUNTIME=node:/usr/bin/node
+YT_DLP_COOKIES_PATH=/var/www/melodia/shared/youtube-cookies.txt
 FFMPEG_PATH=/usr/bin/ffmpeg
 
 GOOGLE_API_KEY=
@@ -441,6 +453,20 @@ sudo -u melodia ffmpeg -version
 ls -lah /var/www/melodia/shared/data/downloads
 ```
 
+If YouTube challenges the VPS as a bot, confirm the configured cookies and JavaScript runtime work as the service user:
+
+```bash
+sudo -u melodia /home/melodia/.local/bin/yt-dlp \
+  --cookies /var/www/melodia/shared/youtube-cookies.txt \
+  --js-runtimes node:/usr/bin/node \
+  --no-playlist \
+  --no-progress \
+  --format "bestaudio[abr<=256]/bestaudio/best" \
+  --get-url "https://www.youtube.com/watch?v=4De_ERjvuUI" | head -n 1
+```
+
+That command must print a media URL before Melodia can stream or download YouTube media on the VPS.
+
 ## 13. Free APIs, Caching, And Quota Protection
 
 Melodia can use these free providers:
@@ -606,7 +632,10 @@ If YouTube downloads fail:
 
 ```bash
 sudo -u melodia /home/melodia/.local/bin/yt-dlp --version
-sudo -u melodia /home/melodia/.local/bin/yt-dlp -F "https://www.youtube.com/watch?v=<videoId>"
+sudo -u melodia /home/melodia/.local/bin/yt-dlp \
+  --cookies /var/www/melodia/shared/youtube-cookies.txt \
+  --js-runtimes node:/usr/bin/node \
+  -F "https://www.youtube.com/watch?v=<videoId>"
 sudo journalctl -u melodia -n 100 --no-pager
 ```
 

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Download, Loader2 } from "lucide-react"
 import { toast } from "sonner"
+import { mutate } from "swr"
 
 interface ImportYouTubePlaylistModalProps {
   onImported?: () => void
@@ -38,6 +39,12 @@ export function ImportYouTubePlaylistModal({ onImported }: ImportYouTubePlaylist
           ? `Imported ${data.importedTracks} songs to your library`
           : "YouTube playlist imported"
       )
+      mutate("/api/tracks")
+      mutate("/api/youtube/tracks")
+      mutate("/api/playlists")
+      mutate("/api/albums")
+      mutate("/api/artists")
+      mutate("/api/genres")
       setUrl("")
       setOpen(false)
       onImported?.()

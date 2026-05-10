@@ -208,34 +208,38 @@ export async function searchYouTubeDataApi(query: string, limit = 20): Promise<Y
  */
 export async function getYTPlaylist(playlistId: string): Promise<YTPlaylistInfo | null> {
   try {
-    const cacheKey = makeCacheKey("ytmusic-playlist", [playlistId])
+    const cacheKey = makeCacheKey("ytmusic-playlist-v2", [playlistId])
     const cached = getCachedJson<YTPlaylistInfo>(cacheKey)
     if (cached) return cached
 
     const yt = await getYTMusic()
-    const playlist = await yt.getPlaylist(playlistId)
+    const [playlist, playlistVideos] = await Promise.all([
+      yt.getPlaylist(playlistId),
+      yt.getPlaylistVideos(playlistId).catch((error) => {
+        console.warn("[v0] YouTube Music playlist videos fetch error:", error)
+        return []
+      }),
+    ])
 
     if (!playlist) return null
 
-    const tracks: YTSearchResult[] = ((playlist as any).tracks || []).map((track: any) =>
-      withContentType({
-        videoId: track.videoId,
-        title: track.name,
-        artist: track.artist?.name || "Unknown Artist",
-        album: track.album?.name || null,
-        duration: track.duration || null,
-        thumbnailUrl: getThumbnailWithFallback(track.videoId),
-        thumbnailUrlHQ: getHQThumbnail(track.videoId),
-        type: "song" as const,
-      })
-    )
+    const playlistAny = playlist as any
+    const rawTracks: any[] =
+      Array.isArray(playlistAny.tracks) && playlistAny.tracks.length > 0
+        ? playlistAny.tracks
+        : Array.isArray(playlistVideos)
+          ? playlistVideos
+          : []
+    const tracks = rawTracks
+      .map(toYTPlaylistTrack)
+      .filter((track): track is YTSearchResult => Boolean(track))
 
     const result = {
       playlistId,
       name: playlist.name,
-      description: (playlist as any).description || null,
-      thumbnailUrl: playlist.thumbnails?.[0]?.url || null,
-      trackCount: tracks.length,
+      description: playlistAny.description || null,
+      thumbnailUrl: getBestThumbnail(playlist.thumbnails),
+      trackCount: tracks.length || playlistAny.videoCount || 0,
       tracks,
     }
     setCachedJson(cacheKey, result, getPlaylistCacheTtlSeconds())
@@ -244,6 +248,61 @@ export async function getYTPlaylist(playlistId: string): Promise<YTPlaylistInfo 
     console.error("[v0] YouTube Music playlist fetch error:", error)
     return null
   }
+}
+
+function toYTPlaylistTrack(track: any): YTSearchResult | null {
+  const videoId = cleanString(track.videoId || track.id || track.video_id)
+  if (!videoId) return null
+
+  const title = cleanString(track.name || track.title)
+  if (!title) return null
+
+  const artist = getArtistName(track.artist || track.artists || track.author || track.uploader)
+  const album = cleanString(track.album?.name || track.album || track.playlistTitle)
+  const thumbnail = getBestThumbnail(track.thumbnails || track.thumbnail)
+
+  return withContentType({
+    videoId,
+    title,
+    artist: artist || "Unknown Artist",
+    album,
+    duration: getDurationSeconds(track.duration || track.durationSeconds || track.lengthSeconds),
+    thumbnailUrl: thumbnail || getThumbnailWithFallback(videoId),
+    thumbnailUrlHQ: getHQThumbnail(videoId),
+    type: track.type === "VIDEO" || track.type === "video" ? "video" : "song",
+  })
+}
+
+function getArtistName(value: any): string | null {
+  if (typeof value === "string") return cleanString(value)
+  if (Array.isArray(value)) {
+    return cleanString(value.map((item) => item?.name || item).filter(Boolean).join(", "))
+  }
+  return cleanString(value?.name || value?.title)
+}
+
+function getBestThumbnail(value: any): string | null {
+  if (typeof value === "string") return cleanString(value)
+  if (!Array.isArray(value) || value.length === 0) return null
+
+  const sorted = [...value].sort((left, right) => Number(right?.width || 0) - Number(left?.width || 0))
+  return cleanString(sorted[0]?.url)
+}
+
+function getDurationSeconds(value: any): number | null {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return value
+  if (typeof value !== "string") return null
+
+  const parts = value.split(":").map((part) => Number.parseInt(part, 10))
+  if (parts.some((part) => !Number.isFinite(part))) return null
+
+  return parts.reduce((total, part) => total * 60 + part, 0)
+}
+
+function cleanString(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  return trimmed || null
 }
 
 function getSearchCacheTtlSeconds(): number {

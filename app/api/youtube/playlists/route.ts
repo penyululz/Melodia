@@ -37,6 +37,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Could not fetch playlist" }, { status: 404 })
     }
 
+    if (playlistInfo.tracks.length === 0) {
+      return NextResponse.json(
+        { error: "No importable tracks were found in this playlist" },
+        { status: 422 }
+      )
+    }
+
     const playlistThumbnail =
       (await saveRemoteImageAsWebp(playlistInfo.thumbnailUrl, `youtube-playlist-${playlistInfo.playlistId}`).catch(() => null)) ||
       playlistInfo.thumbnailUrl
@@ -95,6 +102,13 @@ export async function POST(request: NextRequest) {
     }
 
     db.prepare("UPDATE playlists SET updated_at = datetime('now') WHERE id = ?").run(nativePlaylist.id)
+
+    if (importedTrackCount === 0) {
+      return NextResponse.json(
+        { error: "No importable tracks were saved from this playlist" },
+        { status: 422 }
+      )
+    }
 
     return NextResponse.json({ 
       message: "Playlist imported successfully",

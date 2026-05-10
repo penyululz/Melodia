@@ -71,16 +71,18 @@ jobs:
 
       - name: Create release archive
         run: |
-          tar \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='.next' \
-            --exclude='node_modules' \
-            --exclude='data' \
-            --exclude='.env' \
-            --exclude='.env.*' \
-            --exclude='tsconfig.tsbuildinfo' \
-            -czf melodia-release.tgz .
+          STAGING_DIR="$(mktemp -d)"
+          git archive --format=tar HEAD | tar -x -C "$STAGING_DIR"
+          rm -rf \
+            "$STAGING_DIR/.github" \
+            "$STAGING_DIR/.next" \
+            "$STAGING_DIR/node_modules" \
+            "$STAGING_DIR/data" \
+            "$STAGING_DIR/.env" \
+            "$STAGING_DIR"/.env.* \
+            "$STAGING_DIR/tsconfig.tsbuildinfo"
+          tar -C "$STAGING_DIR" -czf melodia-release.tgz .
+          rm -rf "$STAGING_DIR"
 
       - name: Configure SSH
         run: |

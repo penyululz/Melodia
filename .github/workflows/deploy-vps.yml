@@ -110,12 +110,7 @@ jobs:
           mkdir -p "$RELEASE_DIR"
           tar -xzf "/tmp/melodia-release-$DEPLOY_SHA.tgz" -C "$RELEASE_DIR"
 
-          ln -sfn "$SHARED_DIR/data" "$RELEASE_DIR/data"
-          mkdir -p "$RELEASE_DIR/public/music"
-          rm -rf "$RELEASE_DIR/public/music/uploads"
-          ln -sfn "$SHARED_DIR/uploads" "$RELEASE_DIR/public/music/uploads"
-          rm -rf "$RELEASE_DIR/public/covers"
-          ln -sfn "$SHARED_DIR/covers" "$RELEASE_DIR/public/covers"
+          mkdir -p "$RELEASE_DIR/data" "$RELEASE_DIR/public/music/uploads" "$RELEASE_DIR/public/covers"
 
           if [ -f "$SHARED_DIR/.env.local" ]; then
             ln -sfn "$SHARED_DIR/.env.local" "$RELEASE_DIR/.env.local"
@@ -129,6 +124,19 @@ jobs:
           rm -rf .next/standalone/.next/static .next/standalone/public
           cp -R .next/static .next/standalone/.next/static
           cp -R public .next/standalone/public
+
+          rm -rf "$RELEASE_DIR/data"
+          ln -sfn "$SHARED_DIR/data" "$RELEASE_DIR/data"
+          mkdir -p "$RELEASE_DIR/public/music"
+          rm -rf "$RELEASE_DIR/public/music/uploads" "$RELEASE_DIR/public/covers"
+          ln -sfn "$SHARED_DIR/uploads" "$RELEASE_DIR/public/music/uploads"
+          ln -sfn "$SHARED_DIR/covers" "$RELEASE_DIR/public/covers"
+
+          rm -rf .next/standalone/data .next/standalone/public/music/uploads .next/standalone/public/covers
+          mkdir -p .next/standalone/public/music
+          ln -sfn "$SHARED_DIR/data" .next/standalone/data
+          ln -sfn "$SHARED_DIR/uploads" .next/standalone/public/music/uploads
+          ln -sfn "$SHARED_DIR/covers" .next/standalone/public/covers
 
           ln -sfn "$RELEASE_DIR" "$APP_ROOT/current"
           sudo systemctl restart melodia

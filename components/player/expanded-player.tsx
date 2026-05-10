@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
+import useSWR from "swr"
 import { usePlayerStore, Track } from "@/stores/player-store"
 import { useSidebarStore } from "@/stores/sidebar-store"
 import { useSettingsStore } from "@/stores/settings-store"
 import { seekToPlayback } from "@/lib/playback-events"
-import { MOCK_TRACKS } from "@/lib/mock-data"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { MarqueeText } from "@/components/ui/marquee-text"
@@ -64,6 +64,8 @@ function getSubtitleSource(
   return Number.isInteger(id) && id > 0 ? `/api/subtitles/tracks/${id}` : null
 }
 
+const fetcher = (url: string) => fetch(url).then((response) => response.json())
+
 export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const recordedPlayKeyRef = useRef<string | null>(null)
@@ -75,6 +77,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
     volume,
     isMuted,
     queue,
+    queueIndex,
     shuffle,
     repeat,
     setCurrentTime,
@@ -128,6 +131,14 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
   const feedbackTrackId = !feedbackVideoId && Number.isInteger(Number(currentTrack?.id))
     ? Number(currentTrack?.id)
     : null
+  const relatedKey = feedbackVideoId
+    ? `/api/recommendations?videoId=${encodeURIComponent(feedbackVideoId)}`
+    : feedbackTrackId
+      ? `/api/recommendations?trackId=${feedbackTrackId}`
+      : null
+  const { data: relatedData } = useSWR<{ recommendations?: Track[] }>(relatedKey, fetcher, {
+    revalidateOnFocus: false,
+  })
 
   const clampSeekProgress = (value: number[]) => Math.min(100, Math.max(0, value[0] ?? 0))
 
@@ -192,10 +203,8 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
     }).catch(() => {})
   }
 
-  // Related: same genre, excluding current track
-  const related = MOCK_TRACKS.filter(
-    (t) => t.genre === (currentTrack as any)?.genre && t.id !== currentTrack?.id
-  ).slice(0, 8)
+  const related = relatedData?.recommendations?.slice(0, 8) || []
+  const visibleQueue = queue.slice(Math.max(0, queueIndex))
 
   const videoSrc =
     currentTrack?.source === "youtube" && currentTrack.videoId
@@ -671,9 +680,9 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
             <div className="min-h-0 flex-1 overflow-y-auto p-3 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-muted">
               {activeTab === "queue" && (
                 <div className="space-y-0.5">
-                  {queue.length === 0 ? (
+                  {visibleQueue.length === 0 ? (
                     <p className="py-10 text-center text-sm text-muted-foreground">Queue is empty</p>
-                  ) : queue.slice(0, 20).map((track, i) => (
+                  ) : visibleQueue.slice(0, 20).map((track, i) => (
                     <QueueItem key={`${track.id}-${i}`} track={track} />
                   ))}
                 </div>
@@ -824,18 +833,18 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
         )}
 
         {/* Queue label */}
-        {activeTab !== "lyrics" && queue.length > 0 && (
+        {activeTab !== "lyrics" && visibleQueue.length > 0 && (
           <p className="mt-6 px-6 text-xs text-muted-foreground">
             Playing from <span className="font-medium text-foreground">Your Mix</span>
           </p>
         )}
 
         {/* Up Next (mobile) */}
-        {activeTab !== "lyrics" && queue.length > 0 && (
+        {activeTab !== "lyrics" && visibleQueue.length > 0 && (
           <div className="mt-3 px-3">
             <h3 className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Up Next</h3>
             <div className="space-y-0.5">
-              {queue.slice(0, 10).map((track, i) => (
+              {visibleQueue.slice(0, 10).map((track, i) => (
                 <QueueItem key={`${track.id}-${i}`} track={track} />
               ))}
             </div>

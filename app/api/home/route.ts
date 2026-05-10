@@ -28,9 +28,9 @@ export async function GET(request: NextRequest) {
     const localTrackMap = new Map(localTracks.map((track) => [track.id, track]))
     const ytTrackMap = new Map(ytTracks.map((track) => [track.video_id, track]))
 
-    const listenAgain = getListenAgain(profile.userId, localTrackMap, ytTrackMap)
-    const similar = getSimilarTracks(musicLocalTracks, musicYouTubeTracks, profile, listenAgain)
     const playlistPicks = getPlaylistPicks(localTrackMap, ytTrackMap, profile)
+    const listenAgain = getListenAgain(profile.userId, localTrackMap, ytTrackMap)
+    const similar = getSimilarTracks(musicLocalTracks, musicYouTubeTracks, profile, listenAgain, playlistPicks)
     const trendingTracks = getTrendingTracks(musicLocalTracks, musicYouTubeTracks, profile)
     const recentTracks = getRecentlyAdded(musicLocalTracks, musicYouTubeTracks)
     const mostPlayedTracks = getMostPlayedTracks(musicLocalTracks, musicYouTubeTracks)
@@ -312,9 +312,10 @@ function getSimilarTracks(
   localTracks: Track[],
   ytTracks: YTTrack[],
   profile: TasteProfile,
-  listenAgain: ClientTrack[]
+  listenAgain: ClientTrack[],
+  playlistPicks: ClientTrack[]
 ): { title: string; tracks: ClientTrack[] } {
-  const seed = pickSeed(localTracks, ytTracks, listenAgain)
+  const seed = pickSeed(localTracks, ytTracks, listenAgain, playlistPicks)
   if (!seed) return { title: "Similar to Your Music", tracks: [] }
 
   const local = localTracks
@@ -354,7 +355,12 @@ function getSimilarTracks(
   }
 }
 
-function pickSeed(localTracks: Track[], ytTracks: YTTrack[], listenAgain: ClientTrack[]) {
+function pickSeed(
+  localTracks: Track[],
+  ytTracks: YTTrack[],
+  listenAgain: ClientTrack[],
+  playlistPicks: ClientTrack[]
+) {
   const listened = listenAgain[0]
   if (listened) {
     return {
@@ -364,6 +370,18 @@ function pickSeed(localTracks: Track[], ytTracks: YTTrack[], listenAgain: Client
       artist: listened.artist,
       album: listened.album,
       genre: "genre" in listened ? listened.genre : null,
+    }
+  }
+
+  const playlistPick = playlistPicks[0]
+  if (playlistPick) {
+    return {
+      id: String(playlistPick.id),
+      source: playlistPick.source || "local",
+      title: playlistPick.title,
+      artist: playlistPick.artist,
+      album: playlistPick.album,
+      genre: "genre" in playlistPick ? playlistPick.genre : null,
     }
   }
 

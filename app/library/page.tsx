@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import dynamic from "next/dynamic"
 import useSWR from "swr"
 import { TrackList } from "@/components/library/track-list"
@@ -29,17 +29,35 @@ export default function LibraryPage() {
   
   const localTracks = (localData?.tracks || []) as Track[]
   const ytTracks = ytData?.tracks || []
-  const promotedVideoIds = new Set(localTracks.map(getPromotedYouTubeVideoId).filter(Boolean))
-  const savedOnlineTracks = ytTracks
-    .filter((track: any) => !promotedVideoIds.has(track.video_id))
-    .map(toNativeOnlineTrack) as Track[]
-  const promotedDownloadedTracks = localTracks.filter((track) => Boolean(getPromotedYouTubeVideoId(track)))
-  const downloadedTracks = [
-    ...promotedDownloadedTracks,
-    ...savedOnlineTracks.filter((track: Track) => (track as any).is_cached),
-  ]
-  const allTracks = [...localTracks, ...savedOnlineTracks]
-  const podcastTracks = allTracks.filter(isPodcastTrack)
+  const promotedVideoIds = useMemo(
+    () => new Set(localTracks.map(getPromotedYouTubeVideoId).filter(Boolean)),
+    [localTracks]
+  )
+  const savedOnlineTracks = useMemo(
+    () => ytTracks
+      .filter((track: any) => !promotedVideoIds.has(track.video_id))
+      .map(toNativeOnlineTrack) as Track[],
+    [promotedVideoIds, ytTracks]
+  )
+  const promotedDownloadedTracks = useMemo(
+    () => localTracks.filter((track) => Boolean(getPromotedYouTubeVideoId(track))),
+    [localTracks]
+  )
+  const downloadedTracks = useMemo(
+    () => [
+      ...promotedDownloadedTracks,
+      ...savedOnlineTracks.filter((track: Track) => (track as any).is_cached),
+    ],
+    [promotedDownloadedTracks, savedOnlineTracks]
+  )
+  const allTracks = useMemo(
+    () => [...localTracks, ...savedOnlineTracks],
+    [localTracks, savedOnlineTracks]
+  )
+  const podcastTracks = useMemo(
+    () => allTracks.filter(isPodcastTrack),
+    [allTracks]
+  )
 
   const totalTracks = allTracks.length
 

@@ -53,7 +53,11 @@ export async function GET(request: NextRequest) {
     const playableLocalTracks = musicLocalTracks.filter((track) => !isDislikedLocal(track.id, profile))
     const playableYouTubeTracks = musicYouTubeTracks.filter((track) => !isDislikedYouTube(track.video_id, profile))
 
-    const yourMix = sortLocalTracks(playableLocalTracks, profile, "direct")
+    const playlistSeeds = getPlaylistSeedLocalTracks(playableLocalTracks, profile)
+    const yourMix = uniqueLocalTracks([
+      ...playlistSeeds,
+      ...sortLocalTracks(playableLocalTracks, profile, "direct"),
+    ])
     const discoverMix = sortLocalTracks(playableLocalTracks, profile, "discover")
     const newReleaseMix = sortLocalTracks(
       [...playableLocalTracks].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 30),
@@ -62,6 +66,7 @@ export async function GET(request: NextRequest) {
     )
     const supermix = uniqueLocalTracks([
       ...yourMix.slice(0, 8),
+      ...playlistSeeds.slice(0, 6),
       ...discoverMix.slice(0, 6),
       ...newReleaseMix.slice(0, 4),
       ...playableLocalTracks.filter((track) => track.is_favorite),
@@ -234,6 +239,48 @@ function sortLocalTracks(
     }))
     .sort((a, b) => b.score - a.score || b.track.created_at.localeCompare(a.track.created_at))
     .map((item) => item.track)
+}
+
+function getPlaylistSeedLocalTracks(
+  tracks: Track[],
+  profile: ReturnType<typeof buildTasteProfile>
+): Track[] {
+  if (tracks.length === 0) return []
+
+  const trackMap = new Map(tracks.map((track) => [track.id, track]))
+  const rows = db.prepare(`
+    SELECT
+      track_id,
+      COUNT(*) as playlist_count,
+      MIN(COALESCE(position, 999999)) as best_position,
+      MAX(added_at) as last_added_at
+    FROM playlist_tracks
+    GROUP BY track_id
+  `).all() as {
+    track_id: number
+    playlist_count: number
+    best_position: number | null
+    last_added_at: string | null
+  }[]
+
+  return rows
+    .map((row) => {
+      const track = trackMap.get(row.track_id)
+      if (!track) return null
+      const positionBoost = Math.max(0, 20 - Number(row.best_position || 0) * 0.6)
+      return {
+        track,
+        score:
+          scoreLocalTrack(track, profile, "direct") +
+          Number(row.playlist_count || 0) * 48 +
+          positionBoost +
+          recencyScore(row.last_added_at),
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => b!.score - a!.score)
+    .map((item) => item!.track)
+    .slice(0, 24)
 }
 
 function uniqueLocalTracks(tracks: Track[]) {
@@ -434,6 +481,19 @@ function titleCase(value: string): string {
     .filter(Boolean)
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join(" ")
+}
+
+function recencyScore(date: string | null | undefined): number {
+  const value = getDateValue(date)
+  if (!value) return 0
+  const ageDays = Math.max(0, (Date.now() - value) / 86_400_000)
+  return Math.max(0, 30 - ageDays)
+}
+
+function getDateValue(date: string | null | undefined): number {
+  if (!date) return 0
+  const parsed = Date.parse(date.includes("T") ? date : `${date.replace(" ", "T")}Z`)
+  return Number.isFinite(parsed) ? parsed : 0
 }
 
 function uniqueStrings(values: string[]): string[] {

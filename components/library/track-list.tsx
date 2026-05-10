@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { memo, useState } from "react"
 import Image from "next/image"
 import { mutate } from "swr"
 import { usePlayerStore, Track } from "@/stores/player-store"
@@ -69,6 +69,17 @@ function isYouTubeTrack(track: Track): boolean {
   return track.source === "youtube" && Boolean(track.videoId)
 }
 
+function getComparableTrackKey(track: Partial<Track> | null | undefined): string {
+  const videoId = track?.videoId || track?.file_path?.match(/^\/api\/youtube\/stream\/([^/?#]+)/)?.[1]
+  if (videoId) return `youtube:${videoId}`
+  if (track?.id !== undefined && track.id !== null) return `${track.source || "local"}:${track.id}`
+  return `path:${track?.file_path || track?.title || ""}`
+}
+
+function isSameTrack(left: Partial<Track> | null | undefined, right: Partial<Track> | null | undefined): boolean {
+  return Boolean(left && right && getComparableTrackKey(left) === getComparableTrackKey(right))
+}
+
 function getNumericTrackId(track: Track): number | null {
   const id = Number(track.id)
   return Number.isInteger(id) && id > 0 ? id : null
@@ -90,8 +101,6 @@ export function TrackList({
   onPlaylistTrackRemoved,
   onTrackDeleted,
 }: TrackListProps) {
-  const { currentTrack, isPlaying, playTrack, togglePlay, addToQueue } =
-    usePlayerStore()
   const settings = useSettingsStore()
   const [editingTrack, setEditingTrack] = useState<Track | null>(null)
   const [editForm, setEditForm] = useState<EditTrackForm>({
@@ -106,18 +115,6 @@ export function TrackList({
 
   const getAutoDownloadMediaType = (): OfflineMediaMode =>
     settings.playbackMode === "video" ? "video" : "audio"
-
-  const handlePlay = (track: Track) => {
-    const sameTrack = isYouTubeTrack(track)
-      ? currentTrack?.source === "youtube" && currentTrack.videoId === track.videoId
-      : currentTrack?.source !== "youtube" && currentTrack?.id === track.id
-
-    if (sameTrack) {
-      togglePlay()
-    } else {
-      playTrack(track, tracks)
-    }
-  }
 
   const refreshLibraryData = (trackId?: string | number) => {
     mutate((key) => typeof key === "string" && key.startsWith("/api/tracks"))
@@ -381,172 +378,28 @@ export function TrackList({
       <div className="space-y-1">
         {tracks.map((track, index) => {
           const trackIsYouTube = isYouTubeTrack(track)
-          const isCurrentTrack = trackIsYouTube
-            ? currentTrack?.source === "youtube" && currentTrack.videoId === track.videoId
-            : currentTrack?.source !== "youtube" && currentTrack?.id === track.id
-          const isTrackPlaying = isCurrentTrack && isPlaying
           const isCached = getTrackCached(track)
           const isFavorite = getTrackFavorite(track)
-          const thumbnail = track.cover_art_path || (track as Track & { thumbnailUrl?: string | null }).thumbnailUrl
 
           return (
-            <div
+            <TrackRow
               key={`${track.source || "local"}-${trackIsYouTube ? track.videoId : track.id}`}
-              className={cn(
-                "group flex items-center gap-3 rounded-md px-3 py-2 hover:bg-accent",
-                isCurrentTrack && "bg-accent"
-              )}
-            >
-              <div className="w-8 text-center text-sm text-muted-foreground">
-                <span className="hidden sm:inline group-hover:hidden">
-                  {isTrackPlaying ? (
-                    <span className="flex items-center justify-center">
-                      <span className="flex gap-0.5">
-                        <span className="h-3 w-0.5 animate-pulse bg-primary" />
-                        <span className="h-3 w-0.5 animate-pulse bg-primary [animation-delay:150ms]" />
-                        <span className="h-3 w-0.5 animate-pulse bg-primary [animation-delay:300ms]" />
-                      </span>
-                    </span>
-                  ) : (
-                    index + 1
-                  )}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="flex h-8 w-8 sm:hidden sm:group-hover:flex"
-                  onClick={() => handlePlay(track)}
-                  title={isTrackPlaying ? "Pause" : "Play"}
-                >
-                  {isTrackPlaying ? (
-                    <Pause className="h-4 w-4" />
-                  ) : (
-                    <Play className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-
-              {showCover && (
-                <div className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded bg-muted">
-                  {thumbnail ? (
-                    <Image
-                      src={thumbnail}
-                      alt={track.album || "Album"}
-                      fill
-                      className="object-cover"
-                      unoptimized={trackIsYouTube}
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center">
-                      <Music className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                  )}
-                  {isCached && (
-                    <div className="absolute bottom-0 right-0 rounded-tl bg-emerald-500 p-0.5">
-                      <Download className="h-2 w-2 text-white" />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="min-w-0 flex-1">
-                <p
-                  className={cn(
-                    "truncate text-sm font-medium",
-                    isCurrentTrack && "text-primary"
-                  )}
-                >
-                  {track.title}
-                </p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {track.artist || "Unknown Artist"}
-                  {showAlbum && track.album && ` \u2022 ${track.album}`}
-                </p>
-              </div>
-
-              <span className="hidden text-sm text-muted-foreground sm:block">
-                {formatDuration(track.duration)}
-              </span>
-
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  "h-8 w-8 opacity-100 sm:opacity-0 sm:group-hover:opacity-100",
-                  isFavorite && "text-primary opacity-100"
-                )}
-                onClick={() => toggleFavorite(track)}
-                title={isFavorite ? "Remove favorite" : "Favorite"}
-              >
-                <Heart className={cn("h-4 w-4", isFavorite && "fill-current")} />
-              </Button>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 opacity-100"
-                    title="Track actions"
-                  >
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuItem onClick={() => handlePlay(track)}>
-                    Play Now
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => addToQueue(track)}>
-                    Add to Queue
-                  </DropdownMenuItem>
-                  <AddToPlaylistSubmenu track={track} />
-                  {playlistId && (
-                    <DropdownMenuItem onClick={() => removeTrackFromPlaylist(track)}>
-                      <X className="h-4 w-4" />
-                      Remove from Playlist
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem onClick={() => toggleFavorite(track)}>
-                    Toggle Favorite
-                  </DropdownMenuItem>
-                  {trackIsYouTube && (
-                    <>
-                      <DropdownMenuItem
-                        onClick={() => downloadYouTubeTrack(track)}
-                        disabled={downloadingIds.has(track.videoId!)}
-                      >
-                        {downloadingIds.has(track.videoId!) ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : isCached ? (
-                          <Check className="h-4 w-4" />
-                        ) : (
-                          <Download className="h-4 w-4" />
-                        )}
-                        {isCached ? "Remove Download" : "Download Audio"}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => downloadYouTubeTrack(track, "video")}
-                        disabled={downloadingIds.has(track.videoId!)}
-                      >
-                        <Video className="h-4 w-4" />
-                        Download MP4 Video
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                  <DropdownMenuSeparator />
-                  {!trackIsYouTube && (
-                    <DropdownMenuItem onClick={() => openEditDialog(track)}>
-                      <Pencil className="h-4 w-4" />
-                      Edit Details
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem variant="destructive" onClick={() => deleteTrack(track)}>
-                    <Trash2 className="h-4 w-4" />
-                    {trackIsYouTube ? "Remove from Library" : "Delete Track"}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+              track={track}
+              index={index}
+              tracks={tracks}
+              showAlbum={showAlbum}
+              showCover={showCover}
+              playlistId={playlistId}
+              trackIsYouTube={trackIsYouTube}
+              isCached={isCached}
+              isFavorite={isFavorite}
+              isDownloading={track.videoId ? downloadingIds.has(track.videoId) : false}
+              onToggleFavorite={toggleFavorite}
+              onRemoveFromPlaylist={removeTrackFromPlaylist}
+              onOpenEdit={openEditDialog}
+              onDelete={deleteTrack}
+              onDownloadYouTube={downloadYouTubeTrack}
+            />
           )
         })}
       </div>
@@ -617,3 +470,213 @@ export function TrackList({
     </>
   )
 }
+
+interface TrackRowProps {
+  track: Track
+  index: number
+  tracks: Track[]
+  showAlbum: boolean
+  showCover: boolean
+  playlistId?: string | number
+  trackIsYouTube: boolean
+  isCached: boolean
+  isFavorite: boolean
+  isDownloading: boolean
+  onToggleFavorite: (track: Track) => void
+  onRemoveFromPlaylist: (track: Track) => void
+  onOpenEdit: (track: Track) => void
+  onDelete: (track: Track) => void
+  onDownloadYouTube: (track: Track, media?: OfflineMediaMode) => void
+}
+
+const TrackRow = memo(function TrackRow({
+  track,
+  index,
+  tracks,
+  showAlbum,
+  showCover,
+  playlistId,
+  trackIsYouTube,
+  isCached,
+  isFavorite,
+  isDownloading,
+  onToggleFavorite,
+  onRemoveFromPlaylist,
+  onOpenEdit,
+  onDelete,
+  onDownloadYouTube,
+}: TrackRowProps) {
+  const isCurrentTrack = usePlayerStore((state) => isSameTrack(state.currentTrack, track))
+  const isTrackPlaying = usePlayerStore((state) => isSameTrack(state.currentTrack, track) && state.isPlaying)
+  const playTrack = usePlayerStore((state) => state.playTrack)
+  const togglePlay = usePlayerStore((state) => state.togglePlay)
+  const addToQueue = usePlayerStore((state) => state.addToQueue)
+  const thumbnail = track.cover_art_path || (track as Track & { thumbnailUrl?: string | null }).thumbnailUrl
+
+  const handlePlay = () => {
+    if (isCurrentTrack) {
+      togglePlay()
+    } else {
+      playTrack(track, tracks)
+    }
+  }
+
+  return (
+    <div
+      className={cn(
+        "group flex items-center gap-3 rounded-md px-3 py-2 hover:bg-accent [contain-intrinsic-size:56px] [content-visibility:auto]",
+        isCurrentTrack && "bg-accent"
+      )}
+    >
+      <div className="w-8 text-center text-sm text-muted-foreground">
+        <span className="hidden sm:inline group-hover:hidden">
+          {isTrackPlaying ? (
+            <span className="flex items-center justify-center">
+              <span className="flex gap-0.5">
+                <span className="h-3 w-0.5 animate-pulse bg-primary" />
+                <span className="h-3 w-0.5 animate-pulse bg-primary [animation-delay:150ms]" />
+                <span className="h-3 w-0.5 animate-pulse bg-primary [animation-delay:300ms]" />
+              </span>
+            </span>
+          ) : (
+            index + 1
+          )}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="flex h-8 w-8 sm:hidden sm:group-hover:flex"
+          onClick={handlePlay}
+          title={isTrackPlaying ? "Pause" : "Play"}
+        >
+          {isTrackPlaying ? (
+            <Pause className="h-4 w-4" />
+          ) : (
+            <Play className="h-4 w-4" />
+          )}
+        </Button>
+      </div>
+
+      {showCover && (
+        <div className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded bg-muted">
+          {thumbnail ? (
+            <Image
+              src={thumbnail}
+              alt={track.album || "Album"}
+              fill
+              className="object-cover"
+              unoptimized={trackIsYouTube}
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center">
+              <Music className="h-4 w-4 text-muted-foreground" />
+            </div>
+          )}
+          {isCached && (
+            <div className="absolute bottom-0 right-0 rounded-tl bg-emerald-500 p-0.5">
+              <Download className="h-2 w-2 text-white" />
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="min-w-0 flex-1">
+        <p
+          className={cn(
+            "truncate text-sm font-medium",
+            isCurrentTrack && "text-primary"
+          )}
+        >
+          {track.title}
+        </p>
+        <p className="truncate text-xs text-muted-foreground">
+          {track.artist || "Unknown Artist"}
+          {showAlbum && track.album && ` \u2022 ${track.album}`}
+        </p>
+      </div>
+
+      <span className="hidden text-sm text-muted-foreground sm:block">
+        {formatDuration(track.duration)}
+      </span>
+
+      <Button
+        variant="ghost"
+        size="icon"
+        className={cn(
+          "h-8 w-8 opacity-100 sm:opacity-0 sm:group-hover:opacity-100",
+          isFavorite && "text-primary opacity-100"
+        )}
+        onClick={() => onToggleFavorite(track)}
+        title={isFavorite ? "Remove favorite" : "Favorite"}
+      >
+        <Heart className={cn("h-4 w-4", isFavorite && "fill-current")} />
+      </Button>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 opacity-100"
+            title="Track actions"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuItem onClick={handlePlay}>
+            Play Now
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => addToQueue(track)}>
+            Add to Queue
+          </DropdownMenuItem>
+          <AddToPlaylistSubmenu track={track} />
+          {playlistId && (
+            <DropdownMenuItem onClick={() => onRemoveFromPlaylist(track)}>
+              <X className="h-4 w-4" />
+              Remove from Playlist
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem onClick={() => onToggleFavorite(track)}>
+            Toggle Favorite
+          </DropdownMenuItem>
+          {trackIsYouTube && (
+            <>
+              <DropdownMenuItem
+                onClick={() => onDownloadYouTube(track)}
+                disabled={isDownloading}
+              >
+                {isDownloading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : isCached ? (
+                  <Check className="h-4 w-4" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                {isCached ? "Remove Download" : "Download Audio"}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => onDownloadYouTube(track, "video")}
+                disabled={isDownloading}
+              >
+                <Video className="h-4 w-4" />
+                Download MP4 Video
+              </DropdownMenuItem>
+            </>
+          )}
+          <DropdownMenuSeparator />
+          {!trackIsYouTube && (
+            <DropdownMenuItem onClick={() => onOpenEdit(track)}>
+              <Pencil className="h-4 w-4" />
+              Edit Details
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem variant="destructive" onClick={() => onDelete(track)}>
+            <Trash2 className="h-4 w-4" />
+            {trackIsYouTube ? "Remove from Library" : "Delete Track"}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+})

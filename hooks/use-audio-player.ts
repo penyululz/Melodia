@@ -36,6 +36,16 @@ function getTrackMediaKey(track: Partial<Track> | null): string | null {
   return track.file_path ? `file:${track.file_path}` : null
 }
 
+function getRelatedQueueUrl(track: Partial<Track> | null): string | null {
+  if (!track) return null
+
+  const videoId = getYouTubeVideoIdFromTrack(track)
+  if (videoId) return `/api/recommendations?videoId=${encodeURIComponent(videoId)}`
+
+  const trackId = getNumericTrackId(track)
+  return trackId ? `/api/recommendations?trackId=${trackId}` : null
+}
+
 const OFFLINE_FALLBACK_TIMEOUT_MS = 4500
 
 function getUsableDuration(mediaDuration: number | null | undefined, fallbackDuration: number | null | undefined): number {
@@ -58,6 +68,7 @@ export function useAudioPlayer() {
   const recordedPlayKeyRef = useRef<string | null>(null)
   const loadedTrackKeyRef = useRef<string | null>(null)
   const suppressPauseStateRef = useRef(false)
+  const relatedQueueKeyRef = useRef<string | null>(null)
 
   const {
     currentTrack,
@@ -72,11 +83,40 @@ export function useAudioPlayer() {
     setCurrentTime,
     setDuration,
     playNext,
+    addTracksToQueue,
   } = usePlayerStore()
 
   useEffect(() => {
     recordedPlayKeyRef.current = null
   }, [currentTrack?.id, currentTrack?.videoId, currentTrack?.source])
+
+  useEffect(() => {
+    if (!currentTrack) return
+
+    const queueKey = getTrackMediaKey(currentTrack)
+    const url = getRelatedQueueUrl(currentTrack)
+    if (!queueKey || !url || relatedQueueKeyRef.current === queueKey) return
+
+    const upcomingCount = Math.max(0, queue.length - queueIndex - 1)
+    if (upcomingCount >= 3) return
+
+    relatedQueueKeyRef.current = queueKey
+    const controller = new AbortController()
+
+    fetch(url, { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        const recommendations = Array.isArray(data?.recommendations)
+          ? (data.recommendations as Track[])
+          : []
+        if (recommendations.length > 0) {
+          addTracksToQueue(recommendations.slice(0, 12))
+        }
+      })
+      .catch(() => {})
+
+    return () => controller.abort()
+  }, [addTracksToQueue, currentTrack?.id, currentTrack?.videoId, currentTrack?.file_path, queue.length, queueIndex])
 
   // Update time display
   const updateTime = useCallback(() => {

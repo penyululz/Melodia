@@ -63,6 +63,7 @@ interface PlayerState {
   // Queue actions
   setQueue: (tracks: Track[], startIndex?: number) => void
   addToQueue: (track: Track) => void
+  addTracksToQueue: (tracks: Track[]) => void
   removeFromQueue: (index: number) => void
   clearQueue: () => void
   playNext: () => void
@@ -85,6 +86,51 @@ function shuffleArray<T>(array: T[]): T[] {
     ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
   }
   return shuffled
+}
+
+const YOUTUBE_STREAM_PATH_RE = /^\/api\/youtube\/stream\/([^/?#]+)/
+
+function getTrackVideoId(track: Partial<Track> | null | undefined): string | null {
+  if (!track) return null
+  if (track.videoId) return track.videoId
+  const match = track.file_path?.match(YOUTUBE_STREAM_PATH_RE)
+  return match?.[1] || null
+}
+
+function getTrackQueueKey(track: Partial<Track> | null | undefined): string {
+  const videoId = getTrackVideoId(track)
+  if (videoId) return `youtube:${videoId}`
+  if (track?.id !== undefined && track.id !== null) return `${track.source || "local"}:${track.id}`
+  return `path:${track?.file_path || track?.title || ""}`
+}
+
+function buildPlaybackQueue(track: Track, queue: Track[], shuffle: boolean) {
+  const trackKey = getTrackQueueKey(track)
+  const index = queue.findIndex((queuedTrack) => getTrackQueueKey(queuedTrack) === trackKey)
+  const selectedTrack = index >= 0 ? queue[index] : track
+
+  if (!shuffle) {
+    return {
+      currentTrack: selectedTrack,
+      queue,
+      queueIndex: index >= 0 ? index : 0,
+    }
+  }
+
+  const seen = new Set<string>([getTrackQueueKey(selectedTrack)])
+  const rest = queue.filter((queuedTrack, queuedIndex) => {
+    if (queuedIndex === index) return false
+    const key = getTrackQueueKey(queuedTrack)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+
+  return {
+    currentTrack: selectedTrack,
+    queue: [selectedTrack, ...shuffleArray(rest)],
+    queueIndex: 0,
+  }
 }
 
 function recordTrackTransition(state: Pick<PlayerState, "currentTrack" | "currentTime" | "duration">) {
@@ -147,19 +193,22 @@ export const usePlayerStore = create<PlayerState>()(
       playTrack: (track, queue) => {
         const state = get()
         if (queue) {
-          const index = queue.findIndex((t) => t.id === track.id)
+          const playbackQueue = buildPlaybackQueue(track, queue, state.shuffle)
           set({
-            currentTrack: track,
-            queue: state.shuffle ? shuffleArray(queue) : queue,
+            currentTrack: playbackQueue.currentTrack,
+            queue: playbackQueue.queue,
             originalQueue: queue,
-            queueIndex: index >= 0 ? index : 0,
+            queueIndex: playbackQueue.queueIndex,
             isPlaying: true,
             currentTime: 0,
-            duration: getInitialDuration(track),
+            duration: getInitialDuration(playbackQueue.currentTrack),
           })
         } else {
           set({
             currentTrack: track,
+            queue: [track],
+            originalQueue: [track],
+            queueIndex: 0,
             isPlaying: true,
             currentTime: 0,
             duration: getInitialDuration(track),
@@ -183,14 +232,17 @@ export const usePlayerStore = create<PlayerState>()(
 
       setQueue: (tracks, startIndex = 0) => {
         const state = get()
-        const queue = state.shuffle ? shuffleArray(tracks) : tracks
+        const startTrack = tracks[startIndex] || tracks[0] || null
+        const playbackQueue = startTrack
+          ? buildPlaybackQueue(startTrack, tracks, state.shuffle)
+          : { currentTrack: null, queue: tracks, queueIndex: startIndex }
         set({
-          queue,
+          queue: playbackQueue.queue,
           originalQueue: tracks,
-          queueIndex: startIndex,
-          currentTrack: queue[startIndex] || null,
+          queueIndex: playbackQueue.queueIndex,
+          currentTrack: playbackQueue.currentTrack,
           currentTime: 0,
-          duration: getInitialDuration(queue[startIndex] || null),
+          duration: getInitialDuration(playbackQueue.currentTrack),
         })
       },
 
@@ -199,6 +251,24 @@ export const usePlayerStore = create<PlayerState>()(
           queue: [...state.queue, track],
           originalQueue: [...state.originalQueue, track],
         })),
+
+      addTracksToQueue: (tracks) =>
+        set((state) => {
+          const seenQueueKeys = new Set(state.queue.map(getTrackQueueKey))
+          const uniqueTracks = tracks.filter((track) => {
+            const key = getTrackQueueKey(track)
+            if (seenQueueKeys.has(key)) return false
+            seenQueueKeys.add(key)
+            return true
+          })
+
+          if (uniqueTracks.length === 0) return state
+
+          return {
+            queue: [...state.queue, ...uniqueTracks],
+            originalQueue: [...state.originalQueue, ...uniqueTracks],
+          }
+        }),
 
       removeFromQueue: (index) =>
         set((state) => {
@@ -289,7 +359,7 @@ export const usePlayerStore = create<PlayerState>()(
             // Turn off shuffle - restore original order
             const currentTrack = state.currentTrack
             const newIndex = state.originalQueue.findIndex(
-              (t) => t.id === currentTrack?.id
+              (t) => getTrackQueueKey(t) === getTrackQueueKey(currentTrack)
             )
             return {
               shuffle: false,
@@ -300,7 +370,7 @@ export const usePlayerStore = create<PlayerState>()(
             // Turn on shuffle
             const currentTrack = state.currentTrack
             const otherTracks = state.queue.filter(
-              (t) => t.id !== currentTrack?.id
+              (t) => getTrackQueueKey(t) !== getTrackQueueKey(currentTrack)
             )
             const shuffled = currentTrack
               ? [currentTrack, ...shuffleArray(otherTracks)]
@@ -327,19 +397,22 @@ export const usePlayerStore = create<PlayerState>()(
         const ytTrack = { ...track, source: "youtube" as const }
         if (queue) {
           const ytQueue = queue.map(t => ({ ...t, source: "youtube" as const }))
-          const index = ytQueue.findIndex((t) => t.videoId === track.videoId)
+          const playbackQueue = buildPlaybackQueue(ytTrack, ytQueue, state.shuffle)
           set({
-            currentTrack: ytTrack,
-            queue: state.shuffle ? shuffleArray(ytQueue) : ytQueue,
+            currentTrack: playbackQueue.currentTrack,
+            queue: playbackQueue.queue,
             originalQueue: ytQueue,
-            queueIndex: index >= 0 ? index : 0,
+            queueIndex: playbackQueue.queueIndex,
             isPlaying: true,
             currentTime: 0,
-            duration: getInitialDuration(ytTrack),
+            duration: getInitialDuration(playbackQueue.currentTrack),
           })
         } else {
           set({
             currentTrack: ytTrack,
+            queue: [ytTrack],
+            originalQueue: [ytTrack],
+            queueIndex: 0,
             isPlaying: true,
             currentTime: 0,
             duration: getInitialDuration(ytTrack),

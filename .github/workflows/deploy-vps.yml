@@ -123,6 +123,7 @@ jobs:
 
           RELEASE_DIR="$APP_ROOT/releases/$DEPLOY_SHA"
           SHARED_DIR="$APP_ROOT/shared"
+          PREVIOUS_RELEASE="$(readlink -f "$APP_ROOT/current" 2>/dev/null || true)"
 
           mkdir -p "$APP_ROOT/releases" "$SHARED_DIR/data" "$SHARED_DIR/uploads" "$SHARED_DIR/covers" "$SHARED_DIR/music"
           rm -rf "$RELEASE_DIR"
@@ -160,6 +161,28 @@ jobs:
           ln -sfn "$RELEASE_DIR" "$APP_ROOT/current"
           sudo systemctl restart melodia
 
-          find "$APP_ROOT/releases" -mindepth 1 -maxdepth 1 -type d | sort | head -n -5 | xargs -r rm -rf
+          HEALTHY=0
+          for attempt in $(seq 1 30); do
+            if curl -fsS -I http://127.0.0.1:3001 >/dev/null; then
+              HEALTHY=1
+              break
+            fi
+            sleep 2
+          done
+
+          if [ "$HEALTHY" != "1" ]; then
+            sudo journalctl -u melodia -n 120 --no-pager -l || true
+            if [ -n "$PREVIOUS_RELEASE" ] && [ -d "$PREVIOUS_RELEASE" ]; then
+              ln -sfn "$PREVIOUS_RELEASE" "$APP_ROOT/current"
+              sudo systemctl restart melodia || true
+            fi
+            exit 1
+          fi
+
+          ACTIVE_RELEASE="$(readlink -f "$APP_ROOT/current")"
+          find "$APP_ROOT/releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' \
+            | sort -rn \
+            | awk -v active="$ACTIVE_RELEASE" 'NR > 5 && $2 != active { print $2 }' \
+            | xargs -r rm -rf
           rm -f "/tmp/melodia-release-$DEPLOY_SHA.tgz"
           REMOTE

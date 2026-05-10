@@ -730,10 +730,10 @@ export function VideoPlayer() {
           : isExpandedPlayerOpen
           ? cn(
               "z-[160]",
-              "left-4 right-4 top-24 aspect-video max-h-[calc(100vh-12rem)]",
+              "left-4 right-4 top-[calc(6rem+env(safe-area-inset-top,0px))] aspect-video max-h-[calc(100vh-12rem)]",
               "sm:left-1/2 sm:right-auto sm:w-[560px] sm:max-w-[calc(100vw-4rem)] sm:-translate-x-1/2"
             )
-          : "bottom-36 left-4 right-4 z-50 h-40 w-auto sm:left-auto sm:h-48 sm:w-80 md:h-56 md:w-96 lg:bottom-24",
+          : "bottom-[calc(9rem+env(safe-area-inset-bottom,0px))] left-4 right-4 z-50 h-40 w-auto sm:left-auto sm:h-48 sm:w-80 md:h-56 md:w-96 lg:bottom-24",
         isFloatingPicture && "cursor-grab touch-none active:cursor-grabbing",
         isDragging && "cursor-grabbing"
       )}
@@ -843,17 +843,16 @@ export function VideoPlayer() {
       </div>
 
       {/* Track info */}
-      <div className={cn(
-        "absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3",
-        isExpandedPlayerOpen && "pointer-events-none"
-      )}>
-        <p className="truncate text-sm font-medium text-white">
-          {currentTrack.title}
-        </p>
-        <p className="truncate text-xs text-white/70">
-          {currentTrack.artist}
-        </p>
-      </div>
+      {!isExpandedPlayerOpen && (
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
+          <p className="truncate text-sm font-medium text-white">
+            {currentTrack.title}
+          </p>
+          <p className="truncate text-xs text-white/70">
+            {currentTrack.artist}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

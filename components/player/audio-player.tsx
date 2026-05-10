@@ -48,8 +48,8 @@ export function AudioPlayer() {
   return (
     <div
       className={cn(
-        // Fixed positioning - bottom-16 on mobile (above 64px MobileNav), bottom-0 on desktop
-        "fixed left-0 right-0 z-50 bottom-16 lg:bottom-0",
+        // Fixed positioning - above the safe-area-aware mobile nav, bottom-0 on desktop
+        "fixed left-0 right-0 z-50 bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] lg:bottom-0",
         "border-t border-border bg-card/95 backdrop-blur-lg",
         // On desktop: offset left to not overlap sidebar
         isCollapsed ? "lg:pl-16" : "lg:pl-64"

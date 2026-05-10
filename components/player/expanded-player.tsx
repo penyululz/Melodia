@@ -488,7 +488,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
   }
 
   return (
-    <div className={cn("fixed inset-0 z-[100] bg-background", sidebarOffset)}>
+    <div className={cn("fixed inset-0 z-[100] bg-background pt-safe", sidebarOffset)}>
       {/* Subtle gradient overlay */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-muted/20 to-background" />
 
@@ -562,7 +562,12 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
                 <ThumbsDown className={cn("h-4 w-4", disliked && "fill-current")} />
               </Button>
               <SaveOfflineButton track={currentTrack} variant="icon" />
-              <Button variant="outline" size="sm" className="gap-1.5 rounded-full">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setActiveTab("lyrics")}
+                className={cn("gap-1.5 rounded-full", activeTab === "lyrics" && "border-primary text-primary")}
+              >
                 <Music className="h-4 w-4" />
                 <span className="text-xs">Lyrics</span>
               </Button>
@@ -649,7 +654,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
       {/* ── MOBILE / TABLET LAYOUT: scrollable single column ── */}
       <div className="relative flex h-full flex-col overflow-y-auto lg:hidden">
         {/* Mobile header — sticky */}
-        <div className="sticky top-0 z-10 flex items-center justify-between bg-background/95 px-4 py-3 backdrop-blur">
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-2 bg-background/95 px-3 py-3 backdrop-blur sm:px-4">
           <Button variant="ghost" size="icon" onClick={onClose} className="h-10 w-10">
             <ChevronDown className="h-6 w-6" />
           </Button>
@@ -662,12 +667,12 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
         </div>
 
         {/* Artwork */}
-        <div className="flex justify-center px-8 pt-4">
+        <div className="flex justify-center px-4 pt-4 sm:px-6">
           <div
             className={cn(
               "relative w-full overflow-hidden rounded-xl bg-black shadow-2xl",
               shouldUseVideoFrame
-                ? "aspect-video max-w-[420px] sm:max-w-[560px]"
+                ? "aspect-video max-w-[460px] sm:max-w-[640px]"
                 : "aspect-square max-w-[300px] sm:max-w-[360px]"
             )}
             data-video-dock={shouldUseVideoFrame ? "expanded-player" : undefined}
@@ -713,7 +718,12 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
             <ThumbsDown className={cn("h-4 w-4", disliked && "fill-current")} />
           </Button>
           <SaveOfflineButton track={currentTrack} variant="icon" />
-          <Button variant="outline" size="sm" className="gap-1.5 rounded-full">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setActiveTab(activeTab === "lyrics" ? "queue" : "lyrics")}
+            className={cn("gap-1.5 rounded-full", activeTab === "lyrics" && "border-primary text-primary")}
+          >
             <Music className="h-4 w-4" />
             <span className="text-xs">Lyrics</span>
           </Button>
@@ -751,15 +761,24 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
           {renderVolumeControl("h-10 w-10")}
         </div>
 
+        {/* Lyrics (mobile) */}
+        {activeTab === "lyrics" && (
+          <div className="mt-6 px-3 pb-[calc(2rem+env(safe-area-inset-bottom,0px))]">
+            <div className="rounded-xl border border-border bg-card/60 p-3">
+              <SyncedLyrics />
+            </div>
+          </div>
+        )}
+
         {/* Queue label */}
-        {queue.length > 0 && (
+        {activeTab !== "lyrics" && queue.length > 0 && (
           <p className="mt-6 px-6 text-xs text-muted-foreground">
             Playing from <span className="font-medium text-foreground">Your Mix</span>
           </p>
         )}
 
         {/* Up Next (mobile) */}
-        {queue.length > 0 && (
+        {activeTab !== "lyrics" && queue.length > 0 && (
           <div className="mt-3 px-3">
             <h3 className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Up Next</h3>
             <div className="space-y-0.5">
@@ -771,8 +790,8 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
         )}
 
         {/* Related tracks (mobile) */}
-        {related.length > 0 && (
-          <div className="mt-6 px-3 pb-8">
+        {activeTab !== "lyrics" && related.length > 0 && (
+          <div className="mt-6 px-3 pb-[calc(2rem+env(safe-area-inset-bottom,0px))]">
             <h3 className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               More like this
             </h3>
@@ -801,7 +820,7 @@ function SongVideoToggle({
       <button
         onClick={() => onChange("audio")}
         className={cn(
-          "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+          "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors sm:px-4 sm:text-sm",
           mode === "audio" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"
         )}
       >
@@ -811,7 +830,7 @@ function SongVideoToggle({
       <button
         onClick={() => onChange("video")}
         className={cn(
-          "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+          "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors sm:px-4 sm:text-sm",
           mode === "video" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"
         )}
       >

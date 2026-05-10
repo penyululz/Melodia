@@ -8,6 +8,7 @@ import {
   searchYouTubeDataApi,
   type YTSearchResult,
 } from "@/lib/youtube-music"
+import { searchYouTubeVideos } from "@/lib/yt-dlp"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -19,7 +20,7 @@ type ResolvedVideo = {
   duration: number | null
   thumbnailUrl: string | null
   thumbnailUrlHQ: string | null
-  source: "saved-youtube-cache" | "youtube-music-videos" | "youtube-data-api"
+  source: "saved-youtube-cache" | "youtube-music-videos" | "yt-dlp-search" | "youtube-data-api"
   score: number
 }
 
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ video: null, error: "title or artist is required" }, { status: 400 })
   }
 
-  const cacheKey = makeCacheKey("ytmusic-resolve-video", [
+  const cacheKey = makeCacheKey("ytmusic-resolve-video-v2", [
     normalizeSearchText(title),
     normalizeSearchText(artist),
     normalizeSearchText(album),
@@ -116,6 +117,31 @@ async function searchVideoVariants(
     addUniqueResults(results, seen, batch, "youtube-music-videos")
     const bestMatch = pickBestVideo(results, title, artist, duration)
     if (bestMatch && bestMatch.score >= getResolveThreshold(title, artist, false)) {
+      break
+    }
+  }
+
+  for (const query of queries.slice(0, 2)) {
+    try {
+      const batch = await searchYouTubeVideos(query, 6)
+      addUniqueResults(
+        results,
+        seen,
+        batch.map((video) => ({
+          ...video,
+          album: null,
+          type: "video" as const,
+          content_type: "music" as const,
+        })),
+        "yt-dlp-search"
+      )
+
+      const bestMatch = pickBestVideo(results, title, artist, duration)
+      if (bestMatch && bestMatch.score >= getResolveThreshold(title, artist, false)) {
+        break
+      }
+    } catch (error) {
+      console.warn("[youtube-resolve-video] yt-dlp search fallback failed:", error)
       break
     }
   }

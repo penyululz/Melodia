@@ -24,6 +24,15 @@ export interface YtDlpStreamResult {
   mediaType: YtDownloadMediaType
 }
 
+export interface YtDlpSearchResult {
+  videoId: string
+  title: string
+  artist: string
+  duration: number | null
+  thumbnailUrl: string | null
+  thumbnailUrlHQ: string | null
+}
+
 interface YtDlpDownloadOptions {
   force?: boolean
 }
@@ -211,6 +220,36 @@ export async function getYouTubeDirectStream(
     quality,
     mediaType,
   }
+}
+
+export async function searchYouTubeVideos(
+  query: string,
+  limit = 6
+): Promise<YtDlpSearchResult[]> {
+  const trimmedQuery = query.trim()
+  if (!trimmedQuery) return []
+
+  const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 10)
+  const result = await runYtDlp([
+    "--skip-download",
+    "--no-progress",
+    "--no-warnings",
+    "--socket-timeout",
+    "10",
+    "--extractor-retries",
+    "1",
+    "--flat-playlist",
+    "--print",
+    "%(id)s\t%(title)s\t%(duration)s\t%(uploader)s\t%(thumbnail)s",
+    `ytsearch${safeLimit}:${trimmedQuery}`,
+  ])
+
+  return result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => toYtDlpSearchResult(line))
+    .filter((entry): entry is YtDlpSearchResult => Boolean(entry))
 }
 
 function getDownloadDir(mediaType: YtDownloadMediaType): string {
@@ -421,5 +460,24 @@ function toDownloadResult(
     mimeType: getAudioMimeType(filePath),
     quality,
     mediaType,
+  }
+}
+
+function toYtDlpSearchResult(line: string): YtDlpSearchResult | null {
+  const [videoId, title, durationValue, uploader, thumbnail] = line.split("\t")
+  if (!videoId || !isValidYouTubeVideoId(videoId)) return null
+
+  const duration = Number(durationValue)
+  const thumbnailUrl = thumbnail && thumbnail !== "NA"
+    ? thumbnail
+    : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+
+  return {
+    videoId,
+    title: title && title !== "NA" ? title : "YouTube video",
+    artist: uploader && uploader !== "NA" ? uploader : "YouTube",
+    duration: Number.isFinite(duration) && duration > 0 ? duration : null,
+    thumbnailUrl,
+    thumbnailUrlHQ: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
   }
 }

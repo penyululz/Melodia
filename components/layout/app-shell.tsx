@@ -19,7 +19,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     // Use dvh (dynamic viewport height) so the shell fills correctly in both
     // portrait and landscape on mobile when the browser chrome resizes
-    <div className="relative flex h-[100dvh] overflow-hidden pt-safe">
+    <div className="relative flex h-[100dvh] overflow-hidden">
       {/* Sidebar — fixed, desktop only */}
       <Sidebar />
 
@@ -39,7 +39,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             "flex-1 overflow-y-auto overscroll-contain",
             // Mobile/tablet: mobile nav (64px) + player bar (64px) = 128px
             // Desktop: player bar only (80px)
-            hasPlayer ? "pb-32 lg:pb-20" : "pb-16 lg:pb-0"
+            hasPlayer
+              ? "pb-[calc(8rem+env(safe-area-inset-bottom,0px))] lg:pb-20"
+              : "pb-[calc(4rem+env(safe-area-inset-bottom,0px))] lg:pb-0"
           )}
         >
           {children}

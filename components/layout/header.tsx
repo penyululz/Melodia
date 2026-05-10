@@ -30,7 +30,7 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 lg:h-16 lg:gap-4 lg:px-6">
+    <header className="sticky top-0 z-30 flex min-h-[calc(3.5rem+env(safe-area-inset-top,0px))] items-center gap-2 border-b border-border bg-background/95 px-4 pt-safe backdrop-blur supports-[backdrop-filter]:bg-background/60 lg:min-h-[calc(4rem+env(safe-area-inset-top,0px))] lg:gap-4 lg:px-6">
       {/* Search bar with dropdown */}
       <form onSubmit={handleSearch} className="relative flex flex-1 items-center min-w-0">
         <div className="relative w-full max-w-sm lg:max-w-md">

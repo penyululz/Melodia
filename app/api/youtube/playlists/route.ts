@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import db, { queries, YTPlaylist } from "@/lib/db"
-import { getYTPlaylist, extractPlaylistId, type YTSearchResult } from "@/lib/youtube-music"
+import { getYTPlaylist, getYTSongDetails, extractPlaylistId, type YTSearchResult } from "@/lib/youtube-music"
 import { authErrorResponse, requireMutationAuth } from "@/lib/auth-policy"
 import { deriveAudioDescriptors, detectLibraryContentType, saveRemoteImageAsWebp } from "@/lib/metadata"
 import { saveBestYouTubeThumbnailAsWebp } from "@/lib/youtube-artwork"
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
     // Insert tracks and link to playlist
     let importedTrackCount = 0
     for (let i = 0; i < playlistInfo.tracks.length; i++) {
-      const track = playlistInfo.tracks[i]
+      const track = await resolveImportTrackDetails(playlistInfo.tracks[i])
       if (!track.videoId) continue
 
       const thumbnail = await saveBestYouTubeThumbnailAsWebp(track.videoId, [
@@ -220,7 +220,7 @@ function upsertYouTubeTrack(track: YTSearchResult, thumbnailUrl: string | null) 
 function upsertYouTubeTrackAsLibraryItem(track: YTSearchResult, thumbnailUrl: string | null): { id: number } | null {
   const title = cleanText(track.title) || "Unknown Track"
   const artist = cleanText(track.artist) || "Unknown Artist"
-  const album = cleanText(track.album) || "YouTube Imports"
+  const album = resolveLibraryAlbumName(track, title)
   const filePath = `/api/youtube/stream/${track.videoId}`
   const fileName = `${track.videoId}.youtube`
   const contentType =
@@ -285,6 +285,53 @@ function upsertYouTubeTrackAsLibraryItem(track: YTSearchResult, thumbnailUrl: st
   )
 
   return db.prepare("SELECT id FROM tracks WHERE file_path = ?").get(filePath) as { id: number } | null
+}
+
+async function resolveImportTrackDetails(track: YTSearchResult): Promise<YTSearchResult> {
+  if (!track.videoId) return track
+
+  if (!needsSongDetails(track)) {
+    return {
+      ...track,
+      album: cleanText(track.album) || cleanText(track.title) || null,
+    }
+  }
+
+  const details = await getYTSongDetails(track.videoId).catch(() => null)
+  if (!details) {
+    return {
+      ...track,
+      album: cleanText(track.album) || cleanText(track.title) || null,
+    }
+  }
+
+  return {
+    ...track,
+    title: cleanText(details.title) || track.title,
+    artist: cleanText(details.artist) || track.artist,
+    album: cleanText(details.album) || cleanText(track.album) || cleanText(details.title) || cleanText(track.title) || null,
+    duration: Number.isFinite(details.duration) ? details.duration : track.duration,
+    thumbnailUrl: details.thumbnailUrl || track.thumbnailUrl,
+    thumbnailUrlHQ: details.thumbnailUrlHQ || track.thumbnailUrlHQ,
+    content_type: details.content_type || track.content_type,
+    podcast_title: details.podcast_title || track.podcast_title,
+    podcast_author: details.podcast_author || track.podcast_author,
+  }
+}
+
+function needsSongDetails(track: YTSearchResult): boolean {
+  const album = cleanText(track.album)
+  return !album || isGenericYouTubeAlbum(album) || !cleanText(track.artist) || /^unknown artist$/i.test(track.artist || "")
+}
+
+function resolveLibraryAlbumName(track: YTSearchResult, title: string): string {
+  const album = cleanText(track.album)
+  if (album && !isGenericYouTubeAlbum(album)) return album
+  return title
+}
+
+function isGenericYouTubeAlbum(value: string | null | undefined): boolean {
+  return /^(youtube imports?|youtube downloads?|unknown album)$/i.test(value?.trim() || "")
 }
 
 function cleanText(value: string | null | undefined): string | null {

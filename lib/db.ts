@@ -779,7 +779,8 @@ export const queries = {
     SELECT 
       artist,
       COUNT(*) as track_count,
-      COUNT(DISTINCT album) as album_count
+      COUNT(DISTINCT album) as album_count,
+      MAX(NULLIF(cover_art_path, '')) as image_path
     FROM tracks 
     WHERE artist IS NOT NULL AND artist != '' AND COALESCE(content_type, 'music') != 'podcast'
     GROUP BY artist

@@ -2,6 +2,7 @@
 
 import { use } from "react"
 import useSWR from "swr"
+import Image from "next/image"
 import { TrackList } from "@/components/library/track-list"
 import { Button } from "@/components/ui/button"
 import { usePlayerStore } from "@/stores/player-store"
@@ -20,9 +21,16 @@ export default function ArtistPage({
     `/api/tracks?artist=${encodeURIComponent(decodedArtist)}`,
     fetcher
   )
+  const { data: profileData } = useSWR(
+    `/api/artists/profile?artist=${encodeURIComponent(decodedArtist)}`,
+    fetcher,
+    { revalidateOnFocus: false }
+  )
   const { playTrack } = usePlayerStore()
 
   const tracks = data?.tracks || []
+  const fallbackArtistImage = tracks.find((track: { cover_art_path?: string | null }) => track.cover_art_path)?.cover_art_path
+  const artistImage = profileData?.image_path || fallbackArtistImage
 
   const playAll = () => {
     if (tracks.length > 0) {
@@ -49,8 +57,18 @@ export default function ArtistPage({
     <div className="p-6">
       {/* Artist Header */}
       <div className="mb-8 flex flex-col items-center gap-6 text-center sm:flex-row sm:text-left">
-        <div className="flex h-40 w-40 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted shadow-lg">
-          <User className="h-20 w-20 text-muted-foreground" />
+        <div className="relative flex h-40 w-40 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted shadow-lg">
+          {artistImage ? (
+            <Image
+              src={artistImage}
+              alt={decodedArtist}
+              fill
+              className="object-cover"
+              priority
+            />
+          ) : (
+            <User className="h-20 w-20 text-muted-foreground" />
+          )}
         </div>
 
         <div>

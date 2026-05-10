@@ -33,7 +33,7 @@ export default function ArtistsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-          {artists.map((artist: { artist: string; track_count: number; album_count: number }) => (
+          {artists.map((artist: { artist: string; track_count: number; album_count: number; image_path?: string | null }) => (
             <ArtistCard key={artist.artist} artist={artist} />
           ))}
         </div>

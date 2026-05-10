@@ -6,7 +6,6 @@ import { saveBestYouTubeThumbnailAsWebp } from "@/lib/youtube-artwork"
 import fs from "fs"
 import path from "path"
 
-const DEFAULT_YOUTUBE_ALBUM = "YouTube Downloads"
 const DEFAULT_YOUTUBE_GENRE = "YouTube"
 
 export function getPromotedYouTubeFilePath(videoId: string): string {
@@ -29,7 +28,7 @@ export async function promoteYouTubeDownloadToLocalTrack(
     ...deriveAudioDescriptors({
       title: cleanText(ytTrack.title) || path.basename(fileName, path.extname(fileName)),
       artist: cleanText(ytTrack.artist),
-      album: cleanText(ytTrack.album) || DEFAULT_YOUTUBE_ALBUM,
+      album: resolveYouTubeAlbumName(ytTrack, path.basename(fileName, path.extname(fileName))),
       genre: DEFAULT_YOUTUBE_GENRE,
       fileName,
     }),
@@ -37,7 +36,7 @@ export async function promoteYouTubeDownloadToLocalTrack(
   const onlineTitle = cleanText(ytTrack.title)
   const title = onlineTitle || metadata?.title || path.basename(fileName, path.extname(fileName))
   const artist = cleanText(ytTrack.artist) || metadata?.artist || "Unknown Artist"
-  const album = cleanText(ytTrack.album) || metadata?.album || DEFAULT_YOUTUBE_ALBUM
+  const album = resolveYouTubeAlbumName(ytTrack, metadata?.album || title)
   const contentType =
     metadata?.contentType ||
     ((ytTrack.content_type === "podcast" || ytTrack.content_type === "music") ? ytTrack.content_type : null) ||
@@ -175,4 +174,10 @@ function getTrackByFilePath(filePath: string): Track | null {
 function cleanText(value: string | null | undefined): string | null {
   const trimmed = value?.trim()
   return trimmed ? trimmed : null
+}
+
+function resolveYouTubeAlbumName(ytTrack: YTTrack, fallbackTitle: string): string {
+  const album = cleanText(ytTrack.album)
+  if (album && !/^(youtube imports?|youtube downloads?|unknown album)$/i.test(album)) return album
+  return cleanText(ytTrack.title) || fallbackTitle
 }

@@ -13,6 +13,7 @@
     "demo:status": "node scripts/demo.cjs status",
     "demo:verify": "node scripts/demo.cjs verify",
     "artwork:repair": "node scripts/repair-youtube-artwork.cjs",
+    "youtube:repair-metadata": "node scripts/repair-youtube-metadata.cjs",
     "smoke:api": "node scripts/smoke-api.cjs",
     "lint": "eslint .",
     "check": "corepack pnpm typecheck && corepack pnpm lint && corepack pnpm build && corepack pnpm demo:verify && corepack pnpm smoke:api"

@@ -93,6 +93,15 @@ corepack pnpm artwork:repair
 sudo systemctl restart melodia
 ```
 
+If older imported playlist songs are grouped under `YouTube Imports`, repair their title/artist/album metadata from YouTube Music:
+
+```bash
+cd /var/www/melodia/current
+corepack pnpm youtube:repair-metadata --dry-run
+corepack pnpm youtube:repair-metadata
+sudo systemctl restart melodia
+```
+
 ## Playlist Import
 
 Open Playlists, choose **Import YouTube**, and paste a YouTube or YouTube Music playlist URL. Melodia will:

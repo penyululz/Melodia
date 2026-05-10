@@ -321,6 +321,11 @@ function getPlaylistCacheTtlSeconds(): number {
   return Math.max(1, Number.isFinite(hours) ? hours : 12) * 3600
 }
 
+function getSongDetailsCacheTtlSeconds(): number {
+  const days = Number.parseInt(process.env.YOUTUBE_SONG_DETAILS_CACHE_TTL_DAYS || "30", 10)
+  return Math.max(1, Number.isFinite(days) ? days : 30) * 86_400
+}
+
 function withContentType<T extends YTSearchResult>(result: T): T {
   const contentType = detectLibraryContentType({
     title: result.title,
@@ -377,14 +382,29 @@ export async function getYTSuggestions(videoId: string): Promise<YTSearchResult[
  */
 export async function getYTSongDetails(videoId: string): Promise<YTSearchResult | null> {
   try {
+    const cacheKey = makeCacheKey("ytmusic-song-details", [videoId])
+    const cached = getCachedJson<YTSearchResult | null>(cacheKey)
+    if (cached !== null) return cached
+
+    const provider = "ytmusic-web-song-details"
+    const dailyBudget = Number.parseInt(process.env.YTMUSIC_WEB_DAILY_REQUEST_BUDGET || "500", 10)
+    const perMinuteBudget = Number.parseInt(process.env.YTMUSIC_WEB_REQUESTS_PER_MINUTE || "20", 10)
+    if (!canSpendRequestBudget(
+      provider,
+      1,
+      Number.isFinite(dailyBudget) ? dailyBudget : 500,
+      Number.isFinite(perMinuteBudget) ? perMinuteBudget : 20
+    )) return null
+
     const yt = await getYTMusic()
     const song = await yt.getSong(videoId)
+    spendQuota(provider, 1)
 
     if (!song) return null
 
     const thumbnail = getBestThumbnail((song as any).thumbnails) || getThumbnailWithFallback(song.videoId)
 
-    return withContentType({
+    const result = withContentType({
       videoId: song.videoId,
       title: song.name,
       artist: song.artist?.name || "Unknown Artist",
@@ -394,6 +414,8 @@ export async function getYTSongDetails(videoId: string): Promise<YTSearchResult 
       thumbnailUrlHQ: thumbnail,
       type: "song" as const,
     })
+    setCachedJson(cacheKey, result, getSongDetailsCacheTtlSeconds())
+    return result
   } catch (error) {
     console.error("[v0] YouTube Music song details error:", error)
     return null

@@ -90,7 +90,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
     playTrack,
   } = usePlayerStore()
 
-  const { isCollapsed } = useSidebarStore()
+  const { isCollapsed, setCollapsed } = useSidebarStore()
   const { playbackMode, setPlaybackMode, streamingQuality, pauseWatchHistory } = useSettingsStore()
   const currentTime = playerCurrentTime
   const trackDuration = Number(currentTrack?.duration)
@@ -106,6 +106,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
   const [isVideoFullscreen, setIsVideoFullscreen] = useState(false)
   const [ccEnabled, setCcEnabled] = useState(false)
   const [showVolume, setShowVolume] = useState(false)
+  const previousSidebarCollapsedRef = useRef<boolean | null>(null)
   const subtitleSrc = getSubtitleSource(currentTrack || null)
   const feedbackVideoId = getYouTubeVideoIdFromTrack(currentTrack || null)
   const isYouTube = Boolean(feedbackVideoId)
@@ -189,8 +190,25 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
 
   useEffect(() => {
     setExpandedPlayerOpen(true)
-    return () => setExpandedPlayerOpen(false)
-  }, [setExpandedPlayerOpen])
+
+    const shouldCollapseSidebar =
+      typeof window !== "undefined" &&
+      window.matchMedia("(min-width: 1024px)").matches
+
+    if (shouldCollapseSidebar) {
+      previousSidebarCollapsedRef.current = useSidebarStore.getState().isCollapsed
+      setCollapsed(true)
+    } else {
+      previousSidebarCollapsedRef.current = null
+    }
+
+    return () => {
+      setExpandedPlayerOpen(false)
+      if (previousSidebarCollapsedRef.current !== null) {
+        setCollapsed(previousSidebarCollapsedRef.current)
+      }
+    }
+  }, [setCollapsed, setExpandedPlayerOpen])
 
   useEffect(() => {
     const video = videoRef.current
@@ -348,7 +366,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
   // Video fullscreen mode
   if (isVideoFullscreen && shouldRenderVideo) {
     return (
-      <div className="fixed inset-0 z-[200] flex flex-col bg-black">
+      <div className="fixed inset-0 z-[200] flex flex-col bg-black py-safe-video">
         {/* Video area — fills all available space */}
         <div className="relative flex-1 overflow-hidden">
           {renderVideo("h-full w-full object-contain")}
@@ -488,7 +506,7 @@ export function ExpandedPlayer({ onClose }: ExpandedPlayerProps) {
   }
 
   return (
-    <div className={cn("fixed inset-0 z-[100] bg-background pt-safe", sidebarOffset)}>
+    <div className={cn("fixed inset-0 z-[100] bg-background pt-safe-expanded", sidebarOffset)}>
       {/* Subtle gradient overlay */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-muted/20 to-background" />
 

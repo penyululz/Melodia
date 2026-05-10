@@ -34,8 +34,8 @@ export function ImportYouTubePlaylistModal({ onImported }: ImportYouTubePlaylist
       }
 
       toast.success(
-        data?.nativePlaylist?.track_count
-          ? `Imported ${data.nativePlaylist.track_count} tracks`
+        data?.importedTracks
+          ? `Imported ${data.importedTracks} songs to your library`
           : "YouTube playlist imported"
       )
       setUrl("")

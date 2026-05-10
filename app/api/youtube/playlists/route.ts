@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import db, { queries, YTPlaylist } from "@/lib/db"
 import { getYTPlaylist, extractPlaylistId, type YTSearchResult } from "@/lib/youtube-music"
 import { authErrorResponse, requireMutationAuth } from "@/lib/auth-policy"
-import { saveRemoteImageAsWebp } from "@/lib/metadata"
+import { deriveAudioDescriptors, detectLibraryContentType, saveRemoteImageAsWebp } from "@/lib/metadata"
 
 // GET - List all imported YouTube playlists
 export async function GET() {
@@ -63,25 +63,34 @@ export async function POST(request: NextRequest) {
 
     db.prepare("DELETE FROM yt_playlist_tracks WHERE yt_playlist_id = ?").run(importedPlaylist.id)
     db.prepare("DELETE FROM playlist_youtube_tracks WHERE playlist_id = ?").run(nativePlaylist.id)
+    db.prepare("DELETE FROM playlist_tracks WHERE playlist_id = ?").run(nativePlaylist.id)
 
     // Insert tracks and link to playlist
+    let importedTrackCount = 0
     for (let i = 0; i < playlistInfo.tracks.length; i++) {
       const track = playlistInfo.tracks[i]
+      if (!track.videoId) continue
+
       const thumbnail =
         (await saveRemoteImageAsWebp(track.thumbnailUrlHQ || track.thumbnailUrl, `youtube-${track.videoId}`).catch(() => null)) ||
         track.thumbnailUrlHQ ||
         track.thumbnailUrl
 
       upsertYouTubeTrack(track, thumbnail)
+      const localTrack = upsertYouTubeTrackAsLibraryItem(track, thumbnail)
 
       // Get track ID
       const ytTrack = queries.getYTTrackByVideoId.get(track.videoId)
       if (ytTrack) {
         queries.addToYTPlaylist.run(importedPlaylist.id, ytTrack.id, i + 1)
+      }
+
+      if (localTrack) {
         db.prepare(`
-          INSERT OR IGNORE INTO playlist_youtube_tracks (playlist_id, yt_track_id, position)
+          INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position)
           VALUES (?, ?, ?)
-        `).run(nativePlaylist.id, ytTrack.id, i + 1)
+        `).run(nativePlaylist.id, localTrack.id, i + 1)
+        importedTrackCount += 1
       }
     }
 
@@ -95,8 +104,9 @@ export async function POST(request: NextRequest) {
       },
       nativePlaylist: {
         ...nativePlaylist,
-        track_count: playlistInfo.tracks.length,
+        track_count: importedTrackCount,
       },
+      importedTracks: importedTrackCount,
     })
   } catch (error) {
     const authResponse = authErrorResponse(error)
@@ -190,6 +200,81 @@ function upsertYouTubeTrack(track: YTSearchResult, thumbnailUrl: string | null) 
     track.podcast_title || (track.content_type === "podcast" ? track.album || track.title : null),
     track.podcast_author || (track.content_type === "podcast" ? track.artist : null)
   )
+}
+
+function upsertYouTubeTrackAsLibraryItem(track: YTSearchResult, thumbnailUrl: string | null): { id: number } | null {
+  const title = cleanText(track.title) || "Unknown Track"
+  const artist = cleanText(track.artist) || "Unknown Artist"
+  const album = cleanText(track.album) || "YouTube Imports"
+  const filePath = `/api/youtube/stream/${track.videoId}`
+  const fileName = `${track.videoId}.youtube`
+  const contentType =
+    track.content_type === "podcast" || track.content_type === "music"
+      ? track.content_type
+      : detectLibraryContentType({ title, artist, album, fileName })
+  const descriptors = deriveAudioDescriptors({
+    title,
+    artist,
+    album,
+    genre: "YouTube",
+    fileName,
+  })
+
+  db.prepare(`
+    INSERT INTO tracks (
+      title, artist, album, album_artist, genre, duration,
+      file_path, file_name, storage_kind, storage_path, playback_path,
+      file_size, file_format, cover_art_path, mood, tempo, language, style,
+      content_type, podcast_title, podcast_author, loudness_adjust_db,
+      replaygain_track_gain, replaygain_album_gain, is_favorite
+    )
+    VALUES (?, ?, ?, ?, 'YouTube', ?, ?, ?, 'youtube', NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, 0)
+    ON CONFLICT(file_path) DO UPDATE SET
+      title = excluded.title,
+      artist = excluded.artist,
+      album = excluded.album,
+      album_artist = excluded.album_artist,
+      genre = COALESCE(tracks.genre, excluded.genre),
+      duration = COALESCE(excluded.duration, tracks.duration),
+      file_name = excluded.file_name,
+      storage_kind = 'youtube',
+      playback_path = excluded.playback_path,
+      file_format = COALESCE(tracks.file_format, excluded.file_format),
+      cover_art_path = COALESCE(excluded.cover_art_path, tracks.cover_art_path),
+      mood = COALESCE(tracks.mood, excluded.mood),
+      tempo = COALESCE(tracks.tempo, excluded.tempo),
+      language = COALESCE(tracks.language, excluded.language),
+      style = COALESCE(tracks.style, excluded.style),
+      content_type = excluded.content_type,
+      podcast_title = excluded.podcast_title,
+      podcast_author = excluded.podcast_author,
+      updated_at = datetime('now')
+  `).run(
+    title,
+    artist,
+    album,
+    artist,
+    Number.isFinite(track.duration) ? track.duration : null,
+    filePath,
+    fileName,
+    filePath,
+    track.type === "video" ? "YOUTUBE_VIDEO" : "YOUTUBE_AUDIO",
+    thumbnailUrl,
+    descriptors.mood,
+    descriptors.tempo,
+    descriptors.language,
+    descriptors.style,
+    contentType,
+    track.podcast_title || (contentType === "podcast" ? album : null),
+    track.podcast_author || (contentType === "podcast" ? artist : null)
+  )
+
+  return db.prepare("SELECT id FROM tracks WHERE file_path = ?").get(filePath) as { id: number } | null
+}
+
+function cleanText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : null
 }
 
 function getNativePlaylistMarker(playlistId: string): string {

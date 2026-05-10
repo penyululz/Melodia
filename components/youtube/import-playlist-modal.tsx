@@ -44,8 +44,10 @@ export function ImportPlaylistModal({ children }: ImportPlaylistModalProps) {
         throw new Error(data.error || "Failed to import playlist")
       }
 
-      toast.success(`Imported "${data.playlist.name}" with ${data.playlist.trackCount} tracks`)
+      toast.success(`Imported "${data.playlist.name}" with ${data.importedTracks || data.playlist.trackCount} songs`)
       mutate("/api/youtube/playlists")
+      mutate("/api/tracks")
+      mutate("/api/playlists")
       setUrl("")
       setOpen(false)
     } catch (error) {
